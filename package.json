@@ -1,0 +1,70 @@
+{
+  "name": "copec-windows-app",
+  "version": "1.0.2",
+  "description": "COPEC ISAHA — Application Windows de gestion scolaire",
+  "author": "COPEC ISAHA",
+  "main": "electron/main.cjs",
+  "private": true,
+  "scripts": {
+    "frontend:build": "npm --prefix frontend run build",
+    "desktop:dev": "npm run frontend:build && electron .",
+    "desktop:dist": "npm run frontend:build && electron-builder --win nsis",
+    "desktop:dir": "npm run frontend:build && electron-builder --win dir",
+    "desktop:clean": "rimraf dist-electron"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12",
+    "rimraf": "^6.0.1"
+  },
+  "build": {
+    "appId": "mg.copec.gestionecole",
+    "productName": "COPEC ISAHA",
+    "artifactName": "COPEC-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "vendor/postgresql/**/*",
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "backend/src/**/*",
+      "backend/config/**/*",
+      "backend/package.json",
+      "backend/node_modules/**/*",
+      "database/**/*",
+      "logo.jpg",
+      "!**/*.map",
+      "!**/tests/**",
+      "!**/docs/**"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "COPEC ISAHA",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "extraResources": [
+      {
+        "from": "vendor/postgresql",
+        "to": "postgresql"
+      }
+    ]
+  }
+}

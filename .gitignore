@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env files (secrets — jamais commit)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# Build outputs
+frontend/dist/
+dist-electron/
+
+# Uploads utilisateur (contenu, pas la structure)
+backend/uploads/documents/*
+backend/uploads/selfies/*
+!backend/uploads/documents/.gitkeep
+!backend/uploads/selfies/.gitkeep
+
+# Backups DB
+backups/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

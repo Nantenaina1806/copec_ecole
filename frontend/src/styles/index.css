@@ -1,0 +1,697 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 antialiased;
+  color: #000000; /* voir la note globale juste avant @layer utilities plus bas */
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+::selection {
+  background: rgba(45, 116, 183, 0.18);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c5bdab transparent;
+}
+
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #c5bdab; border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: #a89d86; }
+
+button, a, input, select, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.page-shell {
+  @apply mx-auto w-full max-w-[1600px];
+}
+
+.surface {
+  @apply bg-white border border-slate-200/80 rounded-2xl shadow-sm;
+}
+
+.section-kicker {
+  @apply text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400;
+}
+
+.metric-number {
+  @apply font-display font-extrabold tracking-tight tabular-nums;
+  color: #000000;
+}
+
+
+/* Respecte les préférences système : coupe les animations/transitions décoratives
+   pour les personnes sensibles au mouvement, sans casser la mise en page. */
+@layer utilities {
+  /* Noir pur partout où le texte s'appuie sur les nuances slate les plus sombres (utilisées
+     comme couleur de TEXTE — titres, texte principal), en application directe de className
+     dans le JSX (ex. "text-slate-900"). Ne cible que les classes text- , jamais bg- ou
+     border- : ces mêmes nuances restent la teinte pierre chaude voulue comme fond/bordure
+     ailleurs (sidebar, superpositions de modales, etc.). Placé après @tailwind utilities : à
+     spécificité égale, l'ordre dans le fichier fait gagner cette règle sur l'utilitaire
+     Tailwind généré. */
+  .text-slate-900, .text-slate-800, .text-slate-950 {
+    color: #000000;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+      transition-[transform,background-color,box-shadow,border-color,color] duration-150 ease-out
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed
+      active:scale-[0.98];
+  }
+  .btn-primary {
+    @apply btn bg-brand-800 text-white shadow-sm hover:bg-brand-900 hover:shadow focus-visible:ring-brand-700;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-brand-800 border border-slate-200 hover:border-brand-200 hover:bg-brand-50 focus-visible:ring-brand-300;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-400;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 active:scale-100;
+  }
+  .btn-ghost:hover {
+    color: #000000;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-card border border-slate-200/80 p-5;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-lg;
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white
+      transition-[border-color,box-shadow] duration-150 ease-out
+      placeholder:text-slate-400
+      focus:outline-none focus:ring-4 focus:ring-brand-600/10 focus:border-brand-500;
+    color: #000000;
+  }
+  .label {
+    @apply block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide;
+  }
+  .table-base {
+    @apply w-full text-sm text-left;
+  }
+  .table-base th {
+    @apply bg-slate-50 text-slate-500 font-semibold text-xs uppercase tracking-wide px-3 py-2 border-b border-slate-200;
+  }
+  .table-base td {
+    @apply px-3 py-2 border-b border-slate-100;
+  }
+  .table-base tbody tr {
+    @apply transition-colors duration-100 hover:bg-brand-50/40;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  /* Titres et éléments de marque : la face display (Manrope) porte l'identité visuelle,
+     l'Inter (sans par défaut) reste réservé au texte courant et aux données denses. */
+  .heading {
+    @apply font-display font-bold tracking-tight;
+    color: #000000;
+  }
+
+  /* Données de type "code" (matricule, référence, montant tabulaire) : la face mono
+     signale qu'il s'agit d'un identifiant/valeur exacte, pas d'un texte en prose. */
+  .data-mono {
+    @apply font-mono tabular-nums tracking-tight;
+  }
+
+  /* Motif signature "terrasses des hauts-plateaux" : bandes empilées en dégradé,
+     clin d'œil discret aux rizières en terrasses de la région de Fianarantsoa.
+     Utilisé avec parcimonie (écran de connexion, en-tête de la sidebar). */
+  .bg-terrace {
+    background-image:
+      repeating-linear-gradient(
+        transparent 0px, transparent 34px,
+        rgba(255, 255, 255, 0.05) 34px, rgba(255, 255, 255, 0.05) 36px
+      );
+  }
+  .bg-terrace-gold {
+    background-image:
+      repeating-linear-gradient(
+        transparent 0px, transparent 34px,
+        rgba(217, 154, 63, 0.09) 34px, rgba(217, 154, 63, 0.09) 36px
+      );
+  }
+}
+
+/* ==================== REGLES D'IMPRESSION (MEDIA PRINT) ==================== */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Masquer par défaut tout le contenu de l'application (sidebar, topbar, pages, etc.) et
+     n'afficher que les zones explicitement marquées imprimables :
+     - .print-bulletin-container : bulletin recto/verso (mise en page A4 paysage dédiée)
+     - .print-area : documents simples (carte élève, QR de salle...) en A4 portrait standard.
+     Avant ce correctif, seul .print-bulletin-container était exempté : imprimer la carte
+     élève (FicheEleve.jsx) ou le QR d'une salle (Salles.jsx) via window.print() produisait
+     une page blanche, ces deux écrans n'étant pas enveloppés dans .print-bulletin-container. */
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-bulletin-container, .print-bulletin-container *,
+  .print-area, .print-area * {
+    visibility: visible !important;
+  }
+
+  /* Placer le conteneur du bulletin en haut à gauche de la page imprimée, sur son propre
+     format de page nommé (bulletin-landscape, défini plus bas) — indépendant du format
+     A4 portrait par défaut utilisé par .print-area. */
+  .print-bulletin-container {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 297mm !important;
+    height: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    page: bulletin-landscape;
+  }
+
+  /* Documents simples (carte élève, QR salle...) : A4 portrait standard, taille naturelle
+     plutôt que forcée en paysage plein format comme le bulletin. */
+  .print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12mm !important;
+    background: #ffffff !important;
+  }
+
+  /* Masquer tous les éléments portant la classe print:hidden */
+  .print\:hidden,
+  button,
+  .btn,
+  header,
+  nav,
+  aside {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Réinitialiser le body pour l'impression (taille laissée au navigateur/@page ci-dessous,
+     plutôt que forcée en 297x210 paysage pour tous les documents comme auparavant). */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Remplir 100% de la feuille A4 Paysage (297mm x 210mm) et forcer le saut de page entre Recto et Verso */
+  .page-recto {
+    width: 297mm !important;
+    height: 210mm !important;
+    min-height: 210mm !important;
+    max-height: 210mm !important;
+    box-sizing: border-box !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    margin: 0 !important;
+    padding: 4mm 5mm !important;
+    display: block !important;
+    overflow: hidden !important;
+  }
+
+  .page-verso {
+    width: 297mm !important;
+    height: 210mm !important;
+    min-height: 210mm !important;
+    max-height: 210mm !important;
+    box-sizing: border-box !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    margin: 0 !important;
+    padding: 5mm 6mm !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    overflow: hidden !important;
+  }
+
+  /* Option de rotation 90 degrés si l'utilisateur souhaite imprimer en mode Portrait */
+  .rotate-90-print .page-recto,
+  .rotate-90-print .page-verso {
+    transform: rotate(90deg) translate(0, -210mm) !important;
+    transform-origin: top left !important;
+    width: 297mm !important;
+    height: 210mm !important;
+  }
+
+  /* Page par défaut (carte élève, QR salle, tout ce qui utilise .print-area) : A4 portrait. */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* Page nommée dédiée au bulletin recto/verso : A4 paysage plein format, sans marge. */
+  @page bulletin-landscape {
+    size: 297mm 210mm;
+    margin: 0;
+  }
+}
+
+
+
+
+
+
+/* ==================== COPEC3 PROFESSIONAL UI REFRESH ==================== */
+@layer base {
+  html { scroll-behavior: smooth; }
+  body {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(33, 92, 148, 0.045), transparent 30%),
+      radial-gradient(circle at 100% 0%, rgba(217, 154, 63, 0.035), transparent 25%),
+      #f7f6f2;
+  }
+  ::selection { background: rgba(33, 92, 148, 0.18); color: #231f1b; }
+}
+
+@layer utilities {
+  /* The project historically forced dark text to pure black. Keep hierarchy readable instead. */
+  .text-slate-900, .text-slate-800, .text-slate-950 { color: #231f1b !important; }
+}
+
+@layer components {
+  .app-main {
+    background:
+      linear-gradient(rgba(255,255,255,.42), rgba(255,255,255,.42)),
+      radial-gradient(circle at 85% 8%, rgba(33,92,148,.055), transparent 28%);
+  }
+
+  .page-shell { max-width: 1680px; }
+
+  .card {
+    @apply bg-white rounded-2xl border border-slate-200/75 p-5;
+    box-shadow: 0 1px 2px rgba(18,45,82,.04), 0 8px 26px rgba(18,45,82,.055);
+  }
+  .card-hover:hover {
+    box-shadow: 0 14px 36px rgba(18,45,82,.10), 0 2px 8px rgba(18,45,82,.06);
+  }
+
+  .section-header-pro {
+    @apply relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white px-5 py-5 md:px-6;
+    box-shadow: 0 8px 30px rgba(18,45,82,.045);
+  }
+  .section-header-pro::after {
+    content: '';
+    position: absolute;
+    right: -48px;
+    top: -72px;
+    width: 180px;
+    height: 180px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(217,154,63,.12), transparent 68%);
+    pointer-events: none;
+  }
+
+  .input {
+    @apply rounded-xl border-slate-300/90;
+    min-height: 42px;
+    box-shadow: inset 0 1px 1px rgba(18,45,82,.025);
+  }
+  .input:hover { @apply border-slate-400; }
+  .input:focus { box-shadow: 0 0 0 4px rgba(33,92,148,.09), 0 1px 2px rgba(18,45,82,.05); }
+
+  .btn { @apply rounded-xl; min-height: 40px; }
+  .btn-primary { box-shadow: 0 5px 14px rgba(18,45,82,.15); }
+  .btn-primary:hover { transform: translateY(-1px); }
+
+  .table-base { border-collapse: separate; border-spacing: 0; }
+  .table-base th {
+    @apply bg-slate-50/90 text-slate-500;
+    height: 42px;
+  }
+  .table-base td { @apply py-3; }
+  .table-base tbody tr:last-child td { border-bottom-color: transparent; }
+  .table-base tbody tr:hover td { background: rgba(238,244,251,.55); }
+
+  .metric-number { color: #231f1b !important; }
+
+  .soft-divider { @apply border-t border-slate-100; }
+  .glass-panel {
+    background: rgba(255,255,255,.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+}
+
+@media (min-width: 768px) {
+  .app-main { scrollbar-gutter: stable; }
+}
+
+
+/* ==================== COPEC PRODUCTION POLISH ==================== */
+@layer base {
+  body { min-width: 320px; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid rgba(45, 116, 183, .55);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .app-main {
+    min-width: 0;
+    overscroll-behavior: contain;
+  }
+  .card {
+    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  }
+  .card > h3, .card > h2 { letter-spacing: -.01em; }
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+  }
+  .pro-toolbar {
+    @apply flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white p-2;
+    box-shadow: 0 6px 20px rgba(18,45,82,.04);
+  }
+  .pro-filter-active {
+    @apply bg-brand-700 text-white border-brand-700 shadow-sm;
+  }
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+  }
+}
+
+@media (max-width: 767px) {
+  .section-header-pro { padding: 1rem; border-radius: 1rem; }
+  .section-header-pro .btn, .section-header-pro .btn-secondary, .section-header-pro .btn-ghost { width: 100%; }
+  .page-shell { max-width: 100%; }
+}
+
+
+/* ================================================================
+   COPEC3 PRO UI SYSTEM — polish transverse v8
+   Objectif : une interface calme, lisible, cohérente et orientée tâche.
+   Ces règles complètent les composants existants sans modifier le métier.
+   ================================================================ */
+:root {
+  --copec-ink: #172033;
+  --copec-muted: #64748b;
+  --copec-line: #e5e7eb;
+  --copec-surface: #ffffff;
+  --copec-soft: #f7f8fa;
+  --copec-brand: #215c94;
+  --copec-accent: #d99a3f;
+}
+
+body {
+  background: #f5f7fa;
+  color: var(--copec-ink);
+}
+
+.app-main {
+  scroll-behavior: smooth;
+  background:
+    radial-gradient(circle at 100% 0, rgba(33,92,148,.035), transparent 28rem),
+    #f5f7fa;
+}
+
+.page-context-bar {
+  align-items: center;
+  gap: .55rem;
+  min-height: 30px;
+  padding: .45rem .7rem;
+  border: 1px solid rgba(226,232,240,.9);
+  border-radius: 10px;
+  background: rgba(255,255,255,.72);
+  color: #64748b;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  box-shadow: 0 1px 2px rgba(15,23,42,.02);
+}
+.page-context-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,.1);
+}
+
+.surface, .card {
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15,23,42,.025), 0 8px 24px rgba(15,23,42,.025);
+}
+.card {
+  padding: 1.15rem;
+}
+
+.section-header-pro {
+  position: relative;
+  padding-bottom: .2rem;
+}
+.section-header-pro h2 {
+  letter-spacing: -.025em;
+}
+
+/* Tables: hierarchy stronger, density controlled, horizontal overflow safe. */
+.table-base {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table-base th {
+  background: #f8fafc;
+  color: #64748b;
+  padding-top: .7rem;
+  padding-bottom: .7rem;
+  white-space: nowrap;
+}
+.table-base td {
+  padding-top: .72rem;
+  padding-bottom: .72rem;
+  color: #334155;
+}
+.table-base tbody tr:last-child td {
+  border-bottom: 0;
+}
+.table-base tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* Forms: one visual language across legacy pages too. */
+.input {
+  min-height: 42px;
+  border-color: #dbe2ea;
+  border-radius: 10px;
+  color: #172033;
+  background: #fff;
+}
+.input:hover:not(:disabled) { border-color: #cbd5e1; }
+.input:focus {
+  border-color: rgba(33,92,148,.7);
+  box-shadow: 0 0 0 4px rgba(33,92,148,.09);
+}
+.label {
+  color: #475569;
+  font-size: .69rem;
+  letter-spacing: .045em;
+}
+
+.btn {
+  min-height: 40px;
+  border-radius: 10px;
+}
+.btn-primary {
+  box-shadow: 0 2px 5px rgba(33,92,148,.14);
+}
+
+/* Modal surfaces feel like application dialogs, not browser overlays. */
+[role="dialog"] .card,
+.modal-panel {
+  border-radius: 16px;
+}
+
+/* Common filter/toolbars: enough breathing room without wasting space. */
+.filter-bar,
+.toolbar-pro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .65rem;
+  padding: .7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: rgba(255,255,255,.86);
+}
+
+/* Clickable list rows get a consistent task-oriented affordance. */
+.row-interactive {
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.row-interactive:hover {
+  background: #f8fafc;
+  box-shadow: inset 3px 0 0 var(--copec-brand);
+}
+
+/* Prevent long admin tables from breaking the page on small screens. */
+main table { max-width: 100%; }
+main .overflow-x-auto {
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* Better focus visibility for keyboard-heavy admin workflows. */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid rgba(33,92,148,.55);
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  .app-main { padding-bottom: 5rem; }
+  .card { padding: .9rem; border-radius: 14px; }
+  .section-header-pro { align-items: flex-start; }
+  .section-header-pro h2 { font-size: 1.2rem; }
+  .btn { min-height: 42px; }
+}
+
+/* ================================================================
+   COPEC V13 SMART UX + MOBILE FIRST
+   Navigation mobile, actions rapides, densité contrôlée et ergonomie tactile.
+   ================================================================ */
+.mobile-action-bar { display: none; }
+
+.mobile-only { display: none; }
+
+.touch-target { min-height: 44px; min-width: 44px; }
+
+.smart-grid { display: grid; gap: .85rem; grid-template-columns: repeat(2, minmax(0,1fr)); }
+.smart-action {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 16px;
+  padding: .85rem 1rem;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.smart-action:hover { transform: translateY(-1px); border-color: #cbd5e1; box-shadow: 0 8px 22px rgba(15,23,42,.07); }
+.smart-action-icon { width: 42px; height: 42px; flex: 0 0 42px; display:grid; place-items:center; border-radius: 12px; background:#eef4fb; color:#215c94; }
+
+.task-strip { display:flex; gap:.75rem; overflow-x:auto; padding-bottom:.2rem; scrollbar-width:none; }
+.task-strip::-webkit-scrollbar { display:none; }
+.task-chip { flex: 0 0 auto; min-height: 48px; display:flex; align-items:center; gap:.55rem; border:1px solid #e2e8f0; background:#fff; border-radius:14px; padding:.6rem .8rem; }
+.task-chip strong { font-size:.78rem; }
+.task-chip span { font-size:.68rem; color:#64748b; }
+
+main .table-scroll table { min-width: 680px; }
+main .table-card { overflow:hidden; }
+
+@media (max-width: 767px) {
+  html, body, #root { min-height: 100%; }
+  body { overflow-x: hidden; }
+  .mobile-only { display: block; }
+  .mobile-action-bar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0,1fr));
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: .42rem .35rem calc(.42rem + env(safe-area-inset-bottom));
+    background: rgba(255,255,255,.96);
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -8px 24px rgba(15,23,42,.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  .mobile-action {
+    min-width: 0;
+    min-height: 52px;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 3px;
+    font-size: .61rem;
+    font-weight: 700;
+    text-decoration:none;
+  }
+  .mobile-action.active { color:#215c94; }
+  .mobile-action-primary { color:#215c94; }
+  .mobile-action-plus {
+    width: 34px; height: 34px; border-radius: 12px;
+    display:grid; place-items:center;
+    background:#122d52; color:#fff;
+    box-shadow: 0 5px 14px rgba(18,45,82,.22);
+  }
+  .smart-grid { grid-template-columns: 1fr; gap:.65rem; }
+  .smart-action { min-height: 64px; padding:.7rem .75rem; border-radius:14px; }
+  .smart-action-icon { width:38px; height:38px; flex-basis:38px; }
+
+  .page-shell { width:100%; }
+  .page-context-bar { display:none !important; }
+  .section-header-pro { margin-left: -1px; margin-right: -1px; }
+
+  /* Les tableaux restent complets : ils deviennent scrollables plutôt que de casser la page. */
+  main .overflow-x-auto, main .table-scroll { max-width: calc(100vw - 1.5rem); overflow-x:auto; }
+  main table { font-size:.78rem; }
+  main .table-base th { padding-left:.65rem; padding-right:.65rem; }
+  main .table-base td { padding-left:.65rem; padding-right:.65rem; }
+
+  /* Formulaires mobile : champs empilés, zones tactiles confortables. */
+  input.input, select.input, textarea.input { font-size:16px; }
+  .input { min-height:44px; }
+  .btn { min-height:44px; }
+
+  /* Évite que les modales dépassent l'écran sur les petits appareils. */
+  [role="dialog"] { padding: .65rem !important; }
+  [role="dialog"] > div { max-height: calc(100dvh - 1.25rem); }
+
+  /* Topbar plus compacte : la recherche prend la place utile. */
+  header.sticky { height:64px; }
+  header.sticky .max-w-xl { max-width:none; }
+  header.sticky input { height:42px; font-size:14px; }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .page-shell { max-width: 100%; }
+  .card { padding: 1rem; }
+}
+
+@media (min-width: 768px) {
+  .mobile-action-bar { display:none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smart-action { transition:none; }
+}
