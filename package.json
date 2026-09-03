@@ -33,6 +33,7 @@
       "backend/package.json",
       "backend/node_modules/**/*",
       "database/**/*",
+      "scripts/*.sql",
       "logo.jpg",
       "!**/*.map",
       "!**/tests/**",
