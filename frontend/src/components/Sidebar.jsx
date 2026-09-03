@@ -109,7 +109,7 @@ export const SECTIONS = [
   { key: 'visiteurs', label: 'Registre des visiteurs', roles: ['admin', 'secretaire', 'accueil'] },
   { key: 'finances', label: 'Finances', roles: ['admin', 'economie'] },
   { key: 'paie', label: 'Paie enseignants', roles: ['admin', 'economie'] },
-  { key: 'actualites', label: 'Actualités', roles: ['admin', 'secretaire'] },
+  { key: 'actualites', label: 'Actualités', roles: ['admin'] },
   { key: 'messagerie', label: 'Messagerie parents', roles: ['admin', 'secretaire', 'enseignant', 'surveillant'] },
   { key: 'rapports', label: 'Rapports', roles: ['admin', 'secretaire', 'surveillant'] },
   { key: 'audit', label: "Journal d'Audit", roles: ['admin'] },

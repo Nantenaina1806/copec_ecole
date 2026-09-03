@@ -11,11 +11,9 @@ const {
 
 const router = express.Router();
 
-// --- Actualités --- publiques une fois publie=TRUE (visibles élèves/parents)
-// Le POST/PUT/DELETE ci-dessous sont déjà ouverts à tout le staff (admin, secrétaire...) —
-// le secrétariat gère donc déjà les actualités de bout en bout sans dépendre de l'admin.
-router.get('/actualites', asyncHandler(async (req, res) => {
-  const where = 'WHERE a.publie = TRUE';
+// --- Actualités --- réservées à l'administrateur
+router.get('/actualites', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
+  const where = '';
   const { rows } = await query(
     `SELECT a.*,
             COALESCE(u.nom, ag.nom) AS auteur_nom,
@@ -30,7 +28,7 @@ router.get('/actualites', asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
-router.get('/actualites/admin', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
+router.get('/actualites/admin', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
   const { rows } = await query(
     `SELECT a.*,
             COALESCE(u.nom, ag.nom) AS auteur_nom,
@@ -44,7 +42,7 @@ router.get('/actualites/admin', authenticate, authorize(...ROLES_TOUS_STAFF), as
   res.json(rows);
 }));
 
-router.post('/actualites', authenticate, authorize(...ROLES_TOUS_STAFF), validate({ body: creerActualiteSchema }), asyncHandler(async (req, res) => {
+router.post('/actualites', authenticate, authorize('admin'), validate({ body: creerActualiteSchema }), asyncHandler(async (req, res) => {
   const { titre, contenu, image_url, publie } = req.body;
   const { rows } = await query(
     `INSERT INTO actualite (titre, contenu, image_url, auteur_id, agent_id, publie, date_publication)
@@ -57,7 +55,7 @@ router.post('/actualites', authenticate, authorize(...ROLES_TOUS_STAFF), validat
   res.status(201).json(rows[0]);
 }));
 
-router.put('/actualites/:id', authenticate, authorize(...ROLES_TOUS_STAFF), validate({ params: idParamSchema, body: modifierActualiteSchema }), asyncHandler(async (req, res) => {
+router.put('/actualites/:id', authenticate, authorize('admin'), validate({ params: idParamSchema, body: modifierActualiteSchema }), asyncHandler(async (req, res) => {
   const { titre, contenu, image_url, publie } = req.body;
   const { rows } = await query(
     `UPDATE actualite SET titre = COALESCE($1,titre), contenu = COALESCE($2,contenu), image_url = COALESCE($3,image_url),
@@ -69,16 +67,14 @@ router.put('/actualites/:id', authenticate, authorize(...ROLES_TOUS_STAFF), vali
   res.json(rows[0]);
 }));
 
-router.delete('/actualites/:id', authenticate, authorize(...ROLES_TOUS_STAFF), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
+router.delete('/actualites/:id', authenticate, authorize('admin'), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
   const { rowCount } = await query('DELETE FROM actualite WHERE id = $1', [req.params.id]);
   if (!rowCount) throw new ApiError(404, 'Actualité introuvable.');
   res.status(204).send();
 }));
 
-// Upload de l'image d'illustration d'une actualité (fichier séparé, comme le logo de l'école) :
-// retourne l'URL à réutiliser dans le champ image_url du POST/PUT ci-dessus. Ouvert à tout le
-// staff pouvant gérer les actualités, pas seulement l'admin.
-router.post('/actualites/upload-image', authenticate, authorize(...ROLES_TOUS_STAFF), (req, res, next) => {
+// Upload de l'image d'illustration d'une actualité (fichier séparé, comme le logo de l'école).
+router.post('/actualites/upload-image', authenticate, authorize('admin'), (req, res, next) => {
   upload.single('image')(req, res, (err) => {
     if (err) return next(err);
     return next();

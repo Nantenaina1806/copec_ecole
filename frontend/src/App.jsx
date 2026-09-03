@@ -6,7 +6,6 @@ import { LoadingScreen } from './components/Feedback';
 const Login = lazy(() => import('./pages/Login'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
-const Actualites = lazy(() => import('./pages/Actualites'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const ScanAbsence = lazy(() => import('./pages/ScanAbsence'));
 const PointageSalle = lazy(() => import('./pages/PointageSalle'));
@@ -23,8 +22,7 @@ export default function App() {
   return (
     <Suspense fallback={<LoadingScreen label="Chargement de l'application…" />}>
       <Routes>
-        <Route path="/" element={<Navigate to="/actualites" replace />} />
-        <Route path="/actualites" element={<Actualites />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/mot-de-passe-oublie" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -66,7 +64,7 @@ export default function App() {
           <ProtectedRoute roles={['admin']}><EspaceAgent /></ProtectedRoute>
         } />
 
-        <Route path="*" element={<Navigate to="/actualites" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
   );

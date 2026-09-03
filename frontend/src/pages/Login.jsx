@@ -23,7 +23,7 @@ export default function Login() {
     const from = location.state?.from;
     if (from) return navigate(from, { replace: true });
     if (STAFF_ROLES.includes(user.role)) return navigate('/admin', { replace: true });
-    navigate('/actualites', { replace: true });
+    navigate('/admin', { replace: true });
   };
 
   const handleSubmit = async (e) => {
@@ -72,7 +72,7 @@ export default function Login() {
             <div><div className="flex items-center justify-between"><label className="label mb-1">Mot de passe</label><a href="/mot-de-passe-oublie" className="text-xs font-bold text-brand-700 hover:underline">Mot de passe oublié ?</a></div><div className="relative"><input className="input h-12 pr-11" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={motDePasse} onChange={(e) => setMotDePasse(e.target.value)} placeholder="••••••••" /><button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute inset-y-0 right-0 px-3 text-slate-400 hover:text-slate-700" aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
             <button type="submit" disabled={loading} className="btn-primary w-full h-12 rounded-xl text-sm shadow-lg shadow-brand-800/15">{loading ? <Spinner className="text-white h-4 w-4" /> : 'Se connecter'}</button>
           </form>
-          <div className="mt-8 border-t border-slate-100 pt-5 flex items-center justify-between gap-3"><p className="text-[11px] text-slate-400">Accès réservé au personnel autorisé.</p><a href="/actualites" className="text-xs font-bold text-brand-700 hover:underline">Actualités publiques</a></div>
+          <div className="mt-8 border-t border-slate-100 pt-5"><p className="text-[11px] text-slate-400">Accès réservé au personnel autorisé.</p></div>
         </div>
       </div>
     </div>

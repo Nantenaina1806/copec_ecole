@@ -9,7 +9,7 @@ const EcoleContext = createContext(null);
 
 // Charge une fois (au montage de l'app, avant même la connexion) les infos non sensibles de
 // l'établissement — nom, logo, couleurs — depuis GET /parametres/public (pas d'authentification
-// requise, donc disponible aussi sur /login et /actualites). Remplace les nombreux textes
+// requise, donc disponible aussi sur /login). Remplace les nombreux textes
 // "COPEC ISAHA" figés en dur dans les composants par la vraie identité, modifiable dans
 // l'écran Paramètres (admin) sans toucher au code.
 export function EcoleProvider({ children }) {

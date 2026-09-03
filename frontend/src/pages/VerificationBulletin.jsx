@@ -57,7 +57,7 @@ export default function VerificationBulletin() {
             {error || 'Le QR code est invalide, altéré ou ne correspond à aucun bulletin officiel enregistré.'}
           </p>
           <p className="text-xs text-slate-400 mt-4">Ne considérez pas ce document comme authentique.</p>
-          <Link to="/actualites" className="btn-secondary mt-6">Retour au site</Link>
+          <Link to="/login" className="btn-secondary mt-6">Retour à la connexion</Link>
         </div>
       </div>
     );
@@ -83,7 +83,7 @@ export default function VerificationBulletin() {
               <p className="text-xs text-brand-200">Service officiel de vérification des bulletins</p>
             </div>
           </div>
-          <Link to="/actualites" className="text-xs font-semibold text-white/80 hover:text-white">Site de l&apos;école</Link>
+          <Link to="/login" className="text-xs font-semibold text-white/80 hover:text-white">Connexion</Link>
         </div>
       </header>
 
@@ -206,7 +206,7 @@ export default function VerificationBulletin() {
         </section>
 
         <div className="mt-5 text-center text-xs text-slate-400">
-          <a href={`${publicBase}/actualites`} className="inline-flex items-center gap-1 hover:text-slate-600"><ExternalLink size={13}/> Ouvrir le site de l&apos;école</a>
+          <a href={`${publicBase}/login`} className="inline-flex items-center gap-1 hover:text-slate-600"><ExternalLink size={13}/> Ouvrir la connexion</a>
         </div>
       </main>
     </div>
