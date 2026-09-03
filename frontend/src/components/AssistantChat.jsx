@@ -148,7 +148,7 @@ export default function AssistantChat() {
   return (
     <>
       {open && (
-        <div className="fixed inset-0 md:inset-auto md:bottom-24 md:right-6 z-50 flex items-end md:items-stretch justify-end pointer-events-none">
+        <div className="fixed inset-0 md:inset-auto md:bottom-24 md:right-6 z-[70] flex items-end md:items-stretch justify-end pointer-events-none">
           <div className="pointer-events-auto w-full h-full md:w-[430px] md:h-[680px] md:max-h-[calc(100vh-7rem)] bg-white md:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-risein">
             <header className="relative overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 text-white shrink-0">
               <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-white/10" />
@@ -260,7 +260,7 @@ export default function AssistantChat() {
       )}
 
       {!open && (
-        <button onClick={() => setOpen(true)} className="fixed bottom-4 right-4 md:right-6 z-40 h-12 w-12 rounded-2xl bg-brand-700 text-white shadow-xl flex items-center justify-center hover:bg-brand-800 hover:-translate-y-0.5 transition" aria-label="Ouvrir l’assistant" title="Assistant COPEC">
+        <button onClick={() => setOpen(true)} className="fixed bottom-[5.5rem] right-4 md:bottom-4 md:right-6 z-[70] h-12 w-12 rounded-2xl bg-brand-700 text-white shadow-xl flex items-center justify-center hover:bg-brand-800 hover:-translate-y-0.5 transition" aria-label="Ouvrir l’assistant" title="Assistant COPEC">
           <div className="relative"><MessageCircle size={21} /><Sparkles size={9} className="absolute -right-1 -top-1" /></div>
         </button>
       )}
