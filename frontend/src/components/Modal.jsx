@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]', 'button:not([disabled])', 'textarea:not([disabled])',
@@ -74,7 +75,7 @@ export default function Modal({ open, onClose, title, children, wide, closeOnEsc
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[150] flex items-start md:items-center justify-center bg-slate-900/40 p-4 overflow-y-auto">
       <div
         ref={dialogRef}
@@ -90,6 +91,7 @@ export default function Modal({ open, onClose, title, children, wide, closeOnEsc
         </div>
         <div className="p-5 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
