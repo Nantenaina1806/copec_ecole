@@ -5,19 +5,14 @@
 import axios from 'axios';
 import { Preferences } from '@capacitor/preferences';
 
-const BASE_URL = import.meta.env.VITE_MOBILE_API_URL; // ohatra: https://copec-api.exemple.mg/api
-
-if (!BASE_URL) {
-  // Aleo hisy hadisoana mazava mora tantana toy izay hanana appli miasa amin'ny endriny
-  // tsy azo antoka (fallback URL mety diso).
-  console.warn('[COPEC MOBILE] VITE_MOBILE_API_URL tsy voafaritra ao amin\'ny .env');
-}
+const BASE_URL = import.meta.env.VITE_MOBILE_API_URL || import.meta.env.VITE_API_URL || '/api';
 
 const client = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
 client.interceptors.request.use(async (config) => {
   const { value: token } = await Preferences.get({ key: 'copec_mobile_token' });
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const browserToken = typeof localStorage !== 'undefined' ? localStorage.getItem('copec_token') : null;
+  if (token || browserToken) config.headers.Authorization = `Bearer ${token || browserToken}`;
   return config;
 });
 

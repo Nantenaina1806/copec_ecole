@@ -68,6 +68,17 @@ async function startLocalPostgres({ userData, password }) {
 
   if (await canConnect()) return { port: LOCAL_PORT, dataDir, pgRoot, alreadyRunning: true };
 
+  // Nettoyage du fichier verrou postmaster.pid périmé en cas de coupure de courant ou crash système
+  const pidFile = path.join(dataDir, 'postmaster.pid');
+  if (fs.existsSync(pidFile)) {
+    try {
+      console.warn('[POSTGRES LOCAL] Suppression du fichier verrou postmaster.pid périmé...');
+      fs.unlinkSync(pidFile);
+    } catch (e) {
+      console.warn('[POSTGRES LOCAL] Impossible de supprimer postmaster.pid :', e.message);
+    }
+  }
+
   await run(exe('pg_ctl'), [
     '-D', dataDir,
     '-o', `-p ${LOCAL_PORT} -h 127.0.0.1`,

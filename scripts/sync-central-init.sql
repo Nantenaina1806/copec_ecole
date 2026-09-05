@@ -14,7 +14,14 @@ BEGIN
         SELECT c.relname AS table_name, pg_get_serial_sequence(format('public.%I', c.relname), 'id') AS seq
         FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='public' AND c.relkind='r'
+                WHERE n.nspname='public' AND c.relkind='r'
+                    AND EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns col
+                            WHERE col.table_schema='public'
+                                AND col.table_name=c.relname
+                                AND col.column_name='id'
+                    )
           AND pg_get_serial_sequence(format('public.%I', c.relname), 'id') IS NOT NULL
     LOOP
         EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(id) FROM public.%I),0)+1, false)', r.seq, r.table_name);

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">COPEC Enseignant</string>
+    <string name="title_activity_main">COPEC Enseignant</string>
+    <string name="package_name">mg.copec.enseignant</string>
+    <string name="custom_url_scheme">mg.copec.enseignant</string>
+</resources>

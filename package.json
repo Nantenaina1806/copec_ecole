@@ -1,6 +1,6 @@
 {
   "name": "copec-windows-app",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "COPEC ISAHA — Application Windows de gestion scolaire",
   "author": "COPEC ISAHA",
   "main": "electron/main.cjs",
@@ -10,11 +10,13 @@
     "desktop:dev": "npm run frontend:build && electron .",
     "desktop:dist": "npm run frontend:build && electron-builder --win nsis",
     "desktop:dir": "npm run frontend:build && electron-builder --win dir",
-    "desktop:clean": "rimraf dist-electron"
+    "desktop:clean": "rimraf dist-electron",
+    "desktop:publish": "npm run frontend:build && electron-builder --win nsis --publish always"
   },
   "devDependencies": {
     "electron": "^38.0.0",
     "electron-builder": "^26.0.12",
+    "electron-updater": "^6.6.2",
     "rimraf": "^6.0.1"
   },
   "build": {
@@ -23,6 +25,12 @@
     "artifactName": "COPEC-Setup-${version}.${ext}",
     "directories": {
       "output": "dist-electron"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Nantenaina1806",
+      "repo": "copec_ecole",
+      "releaseType": "release"
     },
     "files": [
       "vendor/postgresql/**/*",
@@ -67,5 +75,8 @@
         "to": "postgresql"
       }
     ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

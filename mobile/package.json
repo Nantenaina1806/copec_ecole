@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "cap:sync": "npx cap sync",
+    "cap:add:android": "npx cap add android",
     "cap:android": "npx cap open android",
     "cap:ios": "npx cap open ios"
   },
@@ -17,9 +18,18 @@
     "@capacitor/network": "^6.0.0",
     "@capacitor-community/sqlite": "^6.0.0",
     "axios": "^1.7.0",
+    "face-api.js": "^0.22.2",
+    "html5-qrcode": "^2.3.8",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "react-router-dom": "^6.26.0"
+    "react-router-dom": "^6.26.0",
+    "lucide-react": "^0.446.0",
+    "recharts": "^2.12.7",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "qrcode.react": "^3.1.0",
+    "xlsx": "^0.18.5",
+    "idb": "^8.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "^6.1.0",

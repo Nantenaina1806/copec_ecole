@@ -2,7 +2,7 @@ const express = require('express');
 const { pool, query } = require('../config/db');
 const { authenticate } = require('../middleware/auth');
 const { applyChange, withSyncFlag } = require('../services/syncService');
-const { isMobileTable, isMobileWritable } = require('../config/mobileSyncTables');
+const { isMobileTable, isMobileWritable, canWriteMobileTable } = require('../config/mobileSyncTables');
 
 const router = express.Router();
 
@@ -32,8 +32,8 @@ function isValidDeviceId(id) {
 // ---------------------------------------------------------------------------
 router.post('/mobile/push', authenticate, async (req, res, next) => {
   try {
-    if (req.user.role !== 'enseignant' && req.user.type !== 'utilisateur') {
-      return res.status(403).json({ error: "Cette synchronisation est réservée aux comptes enseignant." });
+    if (req.user.type !== 'utilisateur' && req.user.type !== 'agent') {
+      return res.status(403).json({ error: 'Cette synchronisation est réservée au personnel autorisé.' });
     }
     const { deviceId, changes } = req.body || {};
     if (!isValidDeviceId(deviceId)) {
@@ -62,7 +62,7 @@ router.post('/mobile/push', authenticate, async (req, res, next) => {
           rejected.push({ operation_id: change?.operation_id, reason: `Table non autorisée pour le mobile: ${table}` });
           continue;
         }
-        if (!isMobileWritable(table)) {
+        if (!isMobileWritable(table) || !canWriteMobileTable(table, req.user.role)) {
           rejected.push({ operation_id: change?.operation_id, reason: `Table en lecture seule pour le mobile: ${table}` });
           continue;
         }
@@ -70,11 +70,10 @@ router.post('/mobile/push', authenticate, async (req, res, next) => {
           rejected.push({ operation_id: change?.operation_id, reason: 'Changement malformé.' });
           continue;
         }
-        // Un enseignant ne synchronise que ce qui le concerne : on force
-        // enseignant_id sur les tables qui en ont une, pour empêcher un appareil
-        // compromis d'écrire au nom d'un autre enseignant.
+        // Un utilisateur ne synchronise que les lignes qu'il est autorisé à
+        // créer. Le serveur reste l'autorité finale sur les permissions métier.
         if (change.new_row && Object.prototype.hasOwnProperty.call(change.new_row, 'enseignant_id')) {
-          change.new_row.enseignant_id = req.user.id;
+          if (req.user.role === 'enseignant') change.new_row.enseignant_id = req.user.id;
         }
 
         await client.query('BEGIN');

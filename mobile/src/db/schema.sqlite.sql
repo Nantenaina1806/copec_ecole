@@ -174,6 +174,16 @@ CREATE TABLE IF NOT EXISTS absence_enseignant (
   _pending_sync INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS absence_eleve (
+  id INTEGER PRIMARY KEY,
+  eleve_id INTEGER NOT NULL,
+  emploi_du_temps_id INTEGER,
+  date_absence TEXT NOT NULL,
+  motif TEXT,
+  justifiee INTEGER NOT NULL DEFAULT 0,
+  _pending_sync INTEGER NOT NULL DEFAULT 0
+);
+
 -- Vakiana fotsiny (paie/mon-salaire), tsy ovaina mobile
 CREATE TABLE IF NOT EXISTS salaire_enseignant (
   id INTEGER PRIMARY KEY,
@@ -189,6 +199,91 @@ CREATE TABLE IF NOT EXISTS utilisateur (
   email TEXT NOT NULL,
   role TEXT NOT NULL,
   photo_url TEXT
+);
+
+CREATE TABLE IF NOT EXISTS niveau (
+  id INTEGER PRIMARY KEY,
+  nom TEXT,
+  code TEXT,
+  actif INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS parent (
+  id INTEGER PRIMARY KEY,
+  nom TEXT,
+  prenom TEXT,
+  telephone TEXT,
+  email TEXT,
+  adresse TEXT,
+  actif INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS eleve_parent (
+  id INTEGER PRIMARY KEY,
+  eleve_id INTEGER,
+  parent_id INTEGER,
+  lien TEXT,
+  principal INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS salle (
+  id INTEGER PRIMARY KEY,
+  nom TEXT,
+  code TEXT,
+  capacite INTEGER,
+  qr_code TEXT,
+  latitude REAL,
+  longitude REAL,
+  actif INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS tarif_frais (
+  id INTEGER PRIMARY KEY,
+  niveau_id INTEGER,
+  annee_scolaire_id INTEGER,
+  type_frais TEXT,
+  libelle TEXT,
+  montant REAL,
+  recurrent_mensuel INTEGER NOT NULL DEFAULT 0,
+  jour_echeance INTEGER,
+  actif INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS frais_scolaire (
+  id INTEGER PRIMARY KEY,
+  eleve_id INTEGER,
+  annee_scolaire_id INTEGER,
+  type_frais TEXT,
+  libelle TEXT,
+  montant_total REAL,
+  mois INTEGER,
+  date_echeance TEXT,
+  statut TEXT NOT NULL DEFAULT 'impaye',
+  tarif_id INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS paiement (
+  id INTEGER PRIMARY KEY,
+  frais_id INTEGER,
+  eleve_id INTEGER,
+  montant REAL,
+  mode_paiement TEXT,
+  reference_paiement TEXT,
+  date_paiement TEXT,
+  recu_numero TEXT,
+  utilisateur_id INTEGER,
+  agent_id INTEGER,
+  commentaire TEXT
+);
+
+CREATE TABLE IF NOT EXISTS message_parent (
+  id INTEGER PRIMARY KEY,
+  parent_id INTEGER,
+  eleve_id INTEGER,
+  sujet TEXT,
+  contenu TEXT,
+  lu INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT
 );
 
 -- ===========================================================================

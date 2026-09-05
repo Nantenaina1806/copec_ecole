@@ -65,3 +65,45 @@ export async function saisirNote(db, {
     throw err;
   }
 }
+
+export async function saisirDevoir(db, {
+  classe_id, matiere_id, enseignant_id, annee_scolaire_id,
+  titre, consignes = null, date_assignation, date_limite = null,
+}) {
+  const id = generateLocalId();
+  const row = { id, classe_id, matiere_id, enseignant_id, annee_scolaire_id, titre, consignes, date_assignation, date_limite };
+  await db.run('BEGIN TRANSACTION', []);
+  try {
+    await db.run(
+      `INSERT INTO devoir
+        (id, classe_id, matiere_id, enseignant_id, annee_scolaire_id, titre, consignes, date_assignation, date_limite, _pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [id, classe_id, matiere_id, enseignant_id, annee_scolaire_id, titre, consignes, date_assignation, date_limite],
+    );
+    await queueLocalChange(db, { table_name: 'devoir', operation: 'INSERT', row_key: { id }, new_row: row });
+    await db.run('COMMIT', []);
+  } catch (err) {
+    await db.run('ROLLBACK', []);
+    throw err;
+  }
+}
+
+export async function enregistrerAbsenceEleve(db, {
+  eleve_id, emploi_du_temps_id = null, date_absence, motif = null, justifiee = false,
+}) {
+  const id = generateLocalId();
+  const row = { id, eleve_id, emploi_du_temps_id, date_absence, motif, justifiee: justifiee ? 1 : 0 };
+  await db.run('BEGIN TRANSACTION', []);
+  try {
+    await db.run(
+      `INSERT INTO absence_eleve (id, eleve_id, emploi_du_temps_id, date_absence, motif, justifiee, _pending_sync)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [id, eleve_id, emploi_du_temps_id, date_absence, motif, justifiee ? 1 : 0],
+    );
+    await queueLocalChange(db, { table_name: 'absence_eleve', operation: 'INSERT', row_key: { id }, new_row: row });
+    await db.run('COMMIT', []);
+  } catch (err) {
+    await db.run('ROLLBACK', []);
+    throw err;
+  }
+}

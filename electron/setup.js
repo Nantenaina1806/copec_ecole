@@ -57,3 +57,6 @@ test.addEventListener('click', testConnection);
 save.addEventListener('click', saveConfig);
 databaseUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveConfig(); });
 window.copec.onSetupError((message) => setStatus(message, 'error'));
+window.copec.onSetupDefaults((defaults) => {
+  if (!databaseUrl.value && defaults?.databaseUrl) databaseUrl.value = defaults.databaseUrl;
+});

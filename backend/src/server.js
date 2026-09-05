@@ -11,7 +11,7 @@ const routes = require('./routes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { sanitizeInput } = require('./middleware/sanitize');
 const { demarrerCronJobs } = require('./jobs/cron');
-const { demarrerSynchronisation } = require('./services/syncService');
+const { demarrerSynchronisation, arreterSynchronisation } = require('./services/syncService');
 const { runMigrations } = require('./services/migrationService');
 const { TIMEZONE } = require('./services/timeService');
 
@@ -61,6 +61,7 @@ app.use(sanitizeInput);
 
 // Fichiers uploadés (documents élèves) — servis tels quels, en dehors du préfixe /api.
 const UPLOAD_ROOT = path.resolve(process.env.COPEC_UPLOAD_DIR || path.join(__dirname, '..', 'uploads'));
+require('fs').mkdirSync(UPLOAD_ROOT, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_ROOT));
 
 // Limite générale, appliquée à toute l'API : filet de sécurité contre le
@@ -140,7 +141,7 @@ app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`Serveur Gestion École COPEC démarré sur le port ${PORT} (${process.env.NODE_ENV || 'development'})`);
   console.log('Schéma DB : database/schema.sql (source de vérité unique)');
   try {
@@ -154,3 +155,22 @@ app.listen(PORT, async () => {
 });
 
 module.exports = app;
+module.exports.server = server;
+const shutdownHandler = async (signal) => {
+  console.log(`[SERVER] Signal ${signal} reçu : fermeture propre du serveur API COPEC...`);
+  try {
+    await arreterSynchronisation();
+    server.close(() => {
+      console.log('[SERVER] Serveur HTTP fermé avec succès.');
+      process.exit(0);
+    });
+  } catch (err) {
+    console.error('[SERVER] Erreur lors de la fermeture :', err);
+    process.exit(1);
+  }
+};
+module.exports.shutdown = shutdownHandler;
+
+process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+process.on('SIGINT', () => shutdownHandler('SIGINT'));
+

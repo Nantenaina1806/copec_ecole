@@ -144,6 +144,14 @@ INSERT INTO agent (nom,prenom,email,mot_de_passe,role_agent,telephone,adresse,ac
 ('Andrianary','Toky','accueil@ecole.mg','$2a$10$taSQi0at5sQhB/ew0Zo79ORh6Wic/1CNnymkW3PnONWhm0Bi0peJK','accueil','0330000002','Fianarantsoa',TRUE),
 ('Rasoanaivo','Voahangy','economie@ecole.mg','$2a$10$taSQi0at5sQhB/ew0Zo79ORh6Wic/1CNnymkW3PnONWhm0Bi0peJK','economie','0330000003','Fianarantsoa',TRUE);
 
+UPDATE utilisateur
+SET mot_de_passe = '$2a$10$AlINjMiUjGDibCXnXlCgkuWZ7CURiJtTns1ZeJpatUUZhB55PkN3O', compte_confirme = TRUE
+WHERE email IN ('admin@ecole.mg', 'luc.andrianina@ecole.mg');
+
+UPDATE agent
+SET mot_de_passe = '$2a$10$AlINjMiUjGDibCXnXlCgkuWZ7CURiJtTns1ZeJpatUUZhB55PkN3O'
+WHERE email IN ('secretaire@ecole.mg', 'accueil@ecole.mg', 'economie@ecole.mg');
+
 -- ============================================================
 -- CLASSES + MATIÈRES + AFFECTATIONS
 -- ============================================================

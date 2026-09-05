@@ -1,8 +1,7 @@
 {
-  "appId": "mg.copec.enseignant",
-  "appName": "COPEC Enseignant",
+  "appId": "mg.copec.isaha",
+  "appName": "COPEC ISAHA",
   "webDir": "dist",
-  "bundledWebRuntime": false,
   "plugins": {
     "CapacitorSQLite": {
       "iosDatabaseLocation": "Library/CapacitorDatabase",

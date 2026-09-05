@@ -6,10 +6,16 @@ const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const { createRequire } = require('module');
+const { autoUpdater } = require('electron-updater');
 const { startLocalPostgres, stopLocalPostgres, LOCAL_PORT } = require('./local-postgres.cjs');
 
 const APP_NAME = 'COPEC ISAHA — Gestion École';
 const DEFAULT_API_PORT = 4000;
+const DEFAULT_CENTRAL_DATABASE_URL = String(
+  process.env.COPEC_CENTRAL_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  'postgresql://neondb_owner:npg_j3EOYUb0WdiI@ep-twilight-river-ay199iwa-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+).trim();
 let API_PORT = 4000;
 let localPostgres = null;
 const CONFIG_FILE = 'config.json';
@@ -17,6 +23,32 @@ const CONFIG_FILE = 'config.json';
 let mainWindow = null;
 let setupWindow = null;
 let backendStarted = false;
+let backendShutdown = null;
+let quitting = false;
+let forceQuitTimer = null;
+let updateTimer = null;
+
+function attendre(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function demarrerVerificationMisesAJour() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
+
+  const verifier = () => autoUpdater.checkForUpdates().catch((error) => {
+    console.warn('[UPDATE] Vérification impossible:', error.message);
+  });
+
+  verifier();
+  updateTimer = setInterval(verifier, 15 * 60 * 1000);
+  app.on('online', verifier);
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[UPDATE] Version ${info.version} téléchargée; installation au prochain démarrage.`);
+  });
+}
 
 function configPath() {
   return path.join(app.getPath('userData'), CONFIG_FILE);
@@ -47,6 +79,22 @@ function normalizeDatabaseUrl(value) {
   return String(value || '').trim();
 }
 
+function databaseConnectionOptions(databaseUrl) {
+  const value = normalizeDatabaseUrl(databaseUrl);
+  let parsed;
+  try { parsed = new URL(value); } catch { throw new Error('URL PostgreSQL centrale invalide.'); }
+  if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error('URL PostgreSQL centrale invalide.');
+  }
+  const isNeon = parsed.hostname.endsWith('.neon.tech');
+  return {
+    connectionString: value,
+    ssl: isNeon || parsed.searchParams.get('sslmode') === 'require' ? { rejectUnauthorized: false } : undefined,
+    connectionTimeoutMillis: 12000,
+    family: 4,
+  };
+}
+
 async function findFreePort(start = 4000) {
   const net = require('net');
   for (let port = start; port < start + 100; port += 1) {
@@ -64,11 +112,7 @@ async function testDatabase(databaseUrl) {
   const backendPackage = path.join(app.getAppPath(), 'backend', 'package.json');
   const backendRequire = createRequire(backendPackage);
   const { Client } = backendRequire('pg');
-  const client = new Client({
-    connectionString: databaseUrl,
-    ssl: databaseUrl.includes('neon.tech') ? { rejectUnauthorized: false } : undefined,
-    connectionTimeoutMillis: 5000,
-  });
+  const client = new Client(databaseConnectionOptions(databaseUrl));
   await client.connect();
   try {
     const result = await client.query("SELECT current_database() AS database, current_user AS user");
@@ -82,11 +126,7 @@ async function initializeEmptyDatabase(databaseUrl) {
   const backendPackage = path.join(app.getAppPath(), 'backend', 'package.json');
   const backendRequire = createRequire(backendPackage);
   const { Client } = backendRequire('pg');
-  const client = new Client({
-    connectionString: databaseUrl,
-    ssl: databaseUrl.includes('neon.tech') ? { rejectUnauthorized: false } : undefined,
-    connectionTimeoutMillis: 5000,
-  });
+  const client = new Client(databaseConnectionOptions(databaseUrl));
 
   await client.connect();
   try {
@@ -102,6 +142,29 @@ async function initializeEmptyDatabase(databaseUrl) {
     await client.query(schema);
     await client.query(seed);
     return { initialized: true, existing: false };
+  } finally {
+    await client.end();
+  }
+}
+
+async function initializeCentralSync(databaseUrl) {
+  const backendPackage = path.join(app.getAppPath(), 'backend', 'package.json');
+  const backendRequire = createRequire(backendPackage);
+  const { Client } = backendRequire('pg');
+  const client = new Client(databaseConnectionOptions(databaseUrl));
+
+  await client.connect();
+  try {
+    const check = await client.query("SELECT to_regclass('public.utilisateur') AS table_name");
+    if (!check.rows[0]?.table_name) {
+      const root = app.getAppPath();
+      await client.query(fs.readFileSync(path.join(root, 'database', 'schema.sql'), 'utf8'));
+      await client.query(fs.readFileSync(path.join(root, 'database', 'seed.sql'), 'utf8'));
+    }
+
+    const root = app.getAppPath();
+    await client.query(fs.readFileSync(path.join(root, 'scripts', 'sync-schema-addon.sql'), 'utf8'));
+    await client.query(fs.readFileSync(path.join(root, 'scripts', 'sync-central-init.sql'), 'utf8'));
   } finally {
     await client.end();
   }
@@ -156,7 +219,8 @@ function requireBackend() {
   configureEnvironment(readConfig());
   // Le backend Express tourne dans le processus principal Electron.
   // Cela évite d'exiger Node.js séparément sur le PC utilisateur.
-  require(backendEntry);
+  const backend = require(backendEntry);
+  backendShutdown = backend.shutdown || null;
   backendStarted = true;
 }
 
@@ -206,7 +270,10 @@ function createMainWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    if (!quitting) app.quit();
+  });
   mainWindow.loadURL(`http://127.0.0.1:${API_PORT}/`);
   return mainWindow;
 }
@@ -234,9 +301,13 @@ function createSetupWindow(errorMessage = '') {
 
   setupWindow.loadFile(path.join(__dirname, 'setup.html'));
   setupWindow.webContents.on('did-finish-load', () => {
+    setupWindow.webContents.send('setup:defaults', { databaseUrl: DEFAULT_CENTRAL_DATABASE_URL });
     if (errorMessage) setupWindow.webContents.send('setup:error', errorMessage);
   });
-  setupWindow.on('closed', () => { setupWindow = null; });
+  setupWindow.on('closed', () => {
+    setupWindow = null;
+    if (!quitting) app.quit();
+  });
   return setupWindow;
 }
 
@@ -248,6 +319,7 @@ async function launchConfiguredApp(config) {
   requireBackend();
   await waitForBackend();
   createMainWindow();
+  demarrerVerificationMisesAJour();
   if (setupWindow) setupWindow.close();
 }
 
@@ -256,6 +328,16 @@ async function initializeLocalDatabase(config) {
   const backendPackage = path.join(app.getAppPath(), 'backend', 'package.json');
   const backendRequire = createRequire(backendPackage);
   const { Client } = backendRequire('pg');
+  const adminClient = new Client({
+    connectionString: `postgresql://postgres:${encodeURIComponent(config.localDbPassword)}@127.0.0.1:${LOCAL_PORT}/postgres`,
+    connectionTimeoutMillis: 5000,
+  });
+  await adminClient.connect();
+  try {
+    const database = await adminClient.query("SELECT 1 FROM pg_database WHERE datname='gestion_ecole'");
+    if (!database.rows.length) await adminClient.query('CREATE DATABASE gestion_ecole');
+  } finally { await adminClient.end(); }
+
   const client = new Client({ connectionString: localUrl, connectionTimeoutMillis: 5000 });
   await client.connect();
   try {
@@ -284,7 +366,6 @@ ipcMain.handle('copec:test-connection', async (_event, payload) => {
 ipcMain.handle('copec:save-config', async (_event, payload) => {
   const centralDatabaseUrl = normalizeDatabaseUrl(payload?.databaseUrl);
   if (centralDatabaseUrl && !/^postgres(ql)?:\/\//i.test(centralDatabaseUrl)) throw new Error('URL PostgreSQL centrale invalide.');
-  if (centralDatabaseUrl) await testDatabase(centralDatabaseUrl);
 
   const previous = readConfig();
   const config = {
@@ -306,6 +387,14 @@ ipcMain.handle('copec:save-config', async (_event, payload) => {
     whatsappTemplateLanguage: 'fr',
   };
   writeConfig(config);
+
+  // La base locale doit démarrer même si Neon est momentanément inaccessible.
+  // La synchronisation réessaiera automatiquement dès que la connexion revient.
+  if (centralDatabaseUrl) {
+    try { await initializeCentralSync(centralDatabaseUrl); } catch (error) {
+      console.warn('[COPEC] préparation Neon reportée:', error.message);
+    }
+  }
   await launchConfiguredApp(config);
   return { ok: true, databaseInitialized: true, syncEnabled: Boolean(centralDatabaseUrl) };
 });
@@ -332,13 +421,34 @@ app.whenReady().then(async () => {
 }
 
 app.on('before-quit', async (event) => {
-  if (localPostgres) {
+  if (!quitting) {
     event.preventDefault();
+    quitting = true;
     const pg = localPostgres;
     localPostgres = null;
-    await stopLocalPostgres(pg).catch(() => {});
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    if (setupWindow && !setupWindow.isDestroyed()) setupWindow.destroy();
+    forceQuitTimer = setTimeout(() => {
+      app.exit(0);
+      process.exit(0);
+    }, 4000);
+    await Promise.race([
+      backendShutdown ? backendShutdown().catch(() => {}) : Promise.resolve(),
+      attendre(1500),
+    ]);
+    if (pg) await Promise.race([stopLocalPostgres(pg).catch(() => {}), attendre(1500)]);
+    if (forceQuitTimer) clearTimeout(forceQuitTimer);
+    forceQuitTimer = null;
     app.exit(0);
+    process.exit(0);
   }
+});
+
+app.on('will-quit', () => {
+  if (forceQuitTimer) clearTimeout(forceQuitTimer);
+  forceQuitTimer = null;
+  if (updateTimer) clearInterval(updateTimer);
+  updateTimer = null;
 });
 
 app.on('window-all-closed', () => {
