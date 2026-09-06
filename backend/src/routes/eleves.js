@@ -75,8 +75,9 @@ router.get('/prochain-matricule', authenticate, authorize('admin', 'secretaire')
   const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
   const prefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
   const { rows } = await query(
-    `SELECT COALESCE(MAX(SUBSTRING(matricule FROM $1)::INT), 0) + 1 AS prochain
-     FROM eleve WHERE matricule LIKE $2 AND SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'`,
+    `SELECT COALESCE(MAX(CASE WHEN SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'
+       THEN SUBSTRING(matricule FROM $1)::INT ELSE 0 END), 0) + 1 AS prochain
+     FROM eleve WHERE matricule LIKE $2`,
     [prefix.length + 1, `${prefix}%`]
   );
   res.json({ matricule: `${prefix}${String(rows[0].prochain).padStart(4, '0')}` });
@@ -164,9 +165,9 @@ router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body
   const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
   const matriculePrefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
   const { rows: compteurRows } = await query(
-    `SELECT COALESCE(MAX(SUBSTRING(matricule FROM $1)::INT), 0) AS dernier
-     FROM eleve
-     WHERE matricule LIKE $2 AND SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'`,
+    `SELECT COALESCE(MAX(CASE WHEN SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'
+       THEN SUBSTRING(matricule FROM $1)::INT ELSE 0 END), 0) AS dernier
+     FROM eleve WHERE matricule LIKE $2`,
     [matriculePrefix.length + 1, `${matriculePrefix}%`]
   );
   const matricule = `${matriculePrefix}${String(Number(compteurRows[0].dernier) + 1).padStart(4, '0')}`;

@@ -47,6 +47,11 @@ router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body
   if (!annee[0].actif && req.user.role !== 'admin') {
     throw new ApiError(403, "Inscription sur une année non active refusée (RG-001) : droit administrateur requis.");
   }
+  const { rows: classeRows } = await query(
+    'SELECT id FROM classe WHERE id = $1 AND annee_scolaire_id = $2',
+    [classe_id, annee_scolaire_id]
+  );
+  if (!classeRows[0]) throw new ApiError(400, "La classe choisie n'appartient pas à cette année scolaire.");
 
   const { rows: numeroRows } = await query(
     `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
