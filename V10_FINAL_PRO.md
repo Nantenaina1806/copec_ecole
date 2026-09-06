@@ -25,5 +25,6 @@ L'école doit fournir ses propres credentials : email officiel/provider et Whats
 Pour les sauvegardes automatiques : `BACKUP_AUTO=true`. Pour autoriser la restauration depuis l'interface admin : `ALLOW_DB_RESTORE=true`, uniquement après validation de la procédure de sauvegarde.
 
 ## Prérequis système
+gggggggggggggggggggggggg
 
 Les fonctions de sauvegarde/restauration utilisent les binaires PostgreSQL `pg_dump` et `psql`, accessibles dans le PATH du serveur.
