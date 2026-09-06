@@ -14,9 +14,18 @@ const {
 
 const router = express.Router();
 
+async function anneeActiveId(db = query) {
+  const { rows } = await db('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+  return rows[0]?.id || null;
+}
+
 // V12 PRO — Contrôle financier et situation par élève.
 // Toutes les sommes viennent de PostgreSQL : le navigateur ne recalcule pas les soldes officiels.
 router.get('/controle', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const anneeCondition = anneeId ? ' AND f.annee_scolaire_id = $1' : '';
+  const mouvementCondition = anneeId ? ' AND m.annee_scolaire_id = $1' : '';
+  const controleParams = anneeId ? [anneeId] : [];
   const [anomalies, synthese] = await Promise.all([
     query(`
       SELECT 'paiement_orphelin' AS type, p.id, p.montant,
@@ -25,7 +34,7 @@ router.get('/controle', authenticate, authorize(...ROLES_FINANCE), asyncHandler(
       FROM paiement p
       JOIN frais_scolaire f ON f.id = p.frais_id
       JOIN eleve e ON e.id = p.eleve_id
-      WHERE p.eleve_id <> f.eleve_id
+      WHERE p.eleve_id <> f.eleve_id${anneeCondition}
       UNION ALL
       SELECT 'paiement_excedentaire', p.id, p.montant,
              CONCAT(e.prenom, ' ', e.nom),
@@ -33,23 +42,23 @@ router.get('/controle', authenticate, authorize(...ROLES_FINANCE), asyncHandler(
       FROM paiement p
       JOIN frais_scolaire f ON f.id = p.frais_id
       JOIN eleve e ON e.id = p.eleve_id
-      WHERE p.montant > f.montant_total
+      WHERE p.montant > f.montant_total${anneeCondition}
       UNION ALL
       SELECT 'mouvement_sans_piece', m.id, m.montant, c.nom,
              'Mouvement de caisse sans paiement ni dépense source.'
       FROM mouvement_caisse m
       JOIN caisse c ON c.id = m.caisse_id
-      WHERE m.paiement_id IS NULL AND m.depense_id IS NULL
+      WHERE m.paiement_id IS NULL AND m.depense_id IS NULL${mouvementCondition}
       ORDER BY type, id DESC LIMIT 200
-    `),
+    `, controleParams),
     query(`
       SELECT
-        (SELECT COUNT(*) FROM frais_scolaire WHERE statut IN ('impaye','partiel')) AS frais_ouverts,
-        (SELECT COUNT(*) FROM paiement WHERE date_paiement = CURRENT_DATE) AS paiements_aujourd_hui,
-        (SELECT COALESCE(SUM(montant),0) FROM paiement WHERE date_paiement = CURRENT_DATE) AS encaisse_aujourd_hui,
-        (SELECT COALESCE(SUM(montant),0) FROM depense WHERE date_depense = CURRENT_DATE) AS depenses_aujourd_hui,
-        (SELECT COUNT(*) FROM cloture_caisse WHERE date_cloture = CURRENT_DATE) AS caisses_cloturees_aujourdhui
-    `)
+        (SELECT COUNT(*) FROM frais_scolaire WHERE statut IN ('impaye','partiel')${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS frais_ouverts,
+        (SELECT COUNT(*) FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement = CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}) AS paiements_aujourd_hui,
+        (SELECT COALESCE(SUM(p.montant),0) FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement = CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}) AS encaisse_aujourd_hui,
+        (SELECT COALESCE(SUM(montant),0) FROM depense WHERE date_depense = CURRENT_DATE${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS depenses_aujourd_hui,
+        (SELECT COUNT(*) FROM cloture_caisse WHERE date_cloture = CURRENT_DATE${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS caisses_cloturees_aujourdhui
+    `, controleParams)
   ]);
   res.json({ anomalies: anomalies.rows, synthese: synthese.rows[0] });
 }));
@@ -85,14 +94,19 @@ router.get('/dashboard', authenticate, authorize(...ROLES_FINANCE), asyncHandler
   const { annee } = localMonthYear(now);
   const debut = req.query.date_debut || `${annee}-01-01`;
   const fin = req.query.date_fin || `${annee}-12-31`;
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const anneeFilter = anneeId ? ' AND f.annee_scolaire_id = $3' : '';
+  const paiementFilter = anneeId ? ' AND f.annee_scolaire_id = $3' : '';
+  const depenseFilter = anneeId ? ' AND annee_scolaire_id = $3' : '';
+  const periodeParams = anneeId ? [debut, fin, anneeId] : [debut, fin];
   const [frais, paiements, depenses, caisses, impayes] = await Promise.all([
-    query(`SELECT COALESCE(SUM(montant_total),0) total_facture, COUNT(*) nb_frais FROM frais_scolaire WHERE created_at::date BETWEEN $1 AND $2 AND statut <> 'annule'`, [debut,fin]),
-    query(`SELECT COALESCE(SUM(montant),0) total_encaisse, COUNT(*) nb_paiements FROM paiement WHERE date_paiement BETWEEN $1 AND $2`, [debut,fin]),
-    query(`SELECT COALESCE(SUM(montant),0) total_depenses, COUNT(*) nb_depenses FROM depense WHERE date_depense BETWEEN $1 AND $2`, [debut,fin]),
+    query(`SELECT COALESCE(SUM(montant_total),0) total_facture, COUNT(*) nb_frais FROM frais_scolaire f WHERE f.created_at::date BETWEEN $1 AND $2 AND f.statut <> 'annule'${anneeFilter}`, periodeParams),
+    query(`SELECT COALESCE(SUM(p.montant),0) total_encaisse, COUNT(*) nb_paiements FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement BETWEEN $1 AND $2${paiementFilter}`, periodeParams),
+    query(`SELECT COALESCE(SUM(montant),0) total_depenses, COUNT(*) nb_depenses FROM depense WHERE date_depense BETWEEN $1 AND $2${depenseFilter}`, periodeParams),
     query(`SELECT * FROM v_solde_caisse ORDER BY nom`),
-    query(`SELECT COALESCE(SUM(f.montant_total - COALESCE(p.total,0)),0) total_restant, COUNT(*) nb_impayes
+        query(`SELECT COALESCE(SUM(f.montant_total - COALESCE(p.total,0)),0) total_restant, COUNT(*) nb_impayes
            FROM frais_scolaire f LEFT JOIN (SELECT frais_id,SUM(montant) total FROM paiement GROUP BY frais_id) p ON p.frais_id=f.id
-           WHERE f.statut IN ('impaye','partiel') AND f.date_echeance IS NOT NULL AND f.date_echeance < CURRENT_DATE`),
+          WHERE f.statut IN ('impaye','partiel') AND f.date_echeance IS NOT NULL AND f.date_echeance < CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}`, anneeId ? [anneeId] : []),
   ]);
   const r=frais.rows[0], p=paiements.rows[0], d=depenses.rows[0], imp=impayes.rows[0];
   const totalEncaisse=Number(p.total_encaisse), totalDepenses=Number(d.total_depenses);
@@ -101,12 +115,15 @@ router.get('/dashboard', authenticate, authorize(...ROLES_FINANCE), asyncHandler
 
 
 // --- Grille tarifaire (tarif_frais) ---
-// Référence des montants par niveau/type de frais, utilisée par POST /tarifs/generer pour
-// créer automatiquement les frais_scolaire de tous les élèves concernés (voir schema.sql).
 router.get('/tarifs', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
   const { annee_scolaire_id } = req.query;
   const params = []; let where = '';
-  if (annee_scolaire_id) { params.push(annee_scolaire_id); where = 'WHERE t.annee_scolaire_id = $1'; }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); where = 'WHERE t.annee_scolaire_id = $1';
+  } else if (!annee_scolaire_id) {
+    const activeId = await anneeActiveId();
+    if (activeId) { params.push(activeId); where = 'WHERE t.annee_scolaire_id = $1'; }
+  }
   const { rows } = await query(
     `SELECT t.*, n.nom AS niveau_nom, n.ordre AS niveau_ordre, cy.nom AS cycle_nom, cy.ordre AS cycle_ordre
      FROM tarif_frais t
@@ -150,20 +167,6 @@ router.delete('/tarifs/:id', authenticate, authorize(...ROLES_FINANCE), validate
   res.status(204).send();
 }));
 
-// POST /tarifs/generer — génère automatiquement les frais_scolaire de tous les élèves
-// actuellement inscrits (statut 'inscrit' ou 'en_cours'), à partir de la grille tarif_frais
-// de leur niveau. N'ENCAISSE RIEN : crée uniquement les frais dus (statut 'impaye'), à
-// encaisser ensuite au guichet comme d'habitude (POST /finance/paiements).
-// - mois (requis) : mois d'écolage concerné -> génère l'écolage de ce mois pour chaque élève
-//   qui n'a pas déjà un frais_scolaire (même type, même mois, même année scolaire).
-// - les tarifs non récurrents (droit, frais d'examen...) sont générés en même temps s'ils
-//   n'existent pas encore pour l'élève sur cette année scolaire — idempotent : les élèves déjà
-//   traités les mois précédents ne sont pas dupliqués, seuls les nouveaux inscrits les reçoivent.
-// - date_echeance (optionnel) : si fourni, s'applique tel quel à TOUS les frais générés (comme
-//   avant, override manuel ponctuel). Si absent, chaque frais récurrent mensuel calcule sa
-//   propre échéance à partir de la règle définie une fois pour toutes : tarif.jour_echeance
-//   s'il est renseigné, sinon parametre_ecole.jour_echeance_defaut (voir PUT /finance/tarifs
-//   et PUT /parametres) — l'admin n'a donc plus besoin de ressaisir une date chaque mois.
 router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), validate({ body: genererFraisSchema }), asyncHandler(async (req, res) => {
   const { annee_scolaire_id, mois, date_echeance } = req.body;
 
@@ -178,10 +181,6 @@ router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), valida
     const { rows: paramRows } = await query('SELECT jour_echeance_defaut FROM parametre_ecole WHERE id = 1');
     if (paramRows[0]) jourEcheanceDefaut = paramRows[0].jour_echeance_defaut;
   }
-  // Année civile réelle du mois d'écolage (utile pour une année scolaire à cheval sur deux
-  // années civiles, ex: écolage de janvier généré pour l'année scolaire 2026-2027) : on prend
-  // l'année de date_debut si le mois est postérieur ou égal à son mois de départ, sinon l'année
-  // suivante (approximation suffisante ici, cohérente avec le fonctionnement des bimestres).
   const { rows: anneeRows } = await query('SELECT date_debut FROM annee_scolaire WHERE id = $1', [annee_scolaire_id]);
   const debut = anneeRows[0] ? new Date(anneeRows[0].date_debut) : new Date();
   const anneeCivile = mois >= (debut.getMonth() + 1) ? debut.getFullYear() : debut.getFullYear() + 1;
@@ -208,10 +207,6 @@ router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), valida
           [eleve.eleve_id, annee_scolaire_id, tarif.type_frais, moisFrais]
         );
         if (existant.length) { ignores += 1; continue; }
-        // Échéance : override manuel (date_echeance du body) en priorité, sinon règle
-        // automatique pour les frais récurrents mensuels (jour du tarif ou jour par défaut de
-        // l'école) ; les frais non récurrents sans override restent sans échéance fixe (comme
-        // avant), l'admin garde la main dessus au cas par cas.
         let echeance = date_echeance || null;
         if (!echeance && tarif.recurrent_mensuel) {
           const jour = tarif.jour_echeance || jourEcheanceDefaut;
@@ -225,10 +220,6 @@ router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), valida
         crees += 1;
       }
     }
-    // Une seule ligne d'audit résumant l'action groupée (et non une par frais créé) : une
-    // génération peut créer des centaines de lignes, ce qui rendrait audit_log illisible et
-    // coûteux à écrire — le détail (quels frais, pour quels élèves) reste consultable dans
-    // frais_scolaire lui-même (tarif_id + mois + date de création), donc rien n'est perdu.
     await tracerFinance(client.query.bind(client), req, 'autre', 'frais_scolaire', null, null, {
       action: 'generation_automatique', annee_scolaire_id, mois, crees, ignores,
     });
@@ -245,12 +236,18 @@ router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), valida
 
 // --- Frais scolaires ---
 router.get('/frais', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
-  const { eleve_id, statut, classe_id } = req.query;
+  const { eleve_id, statut, classe_id, annee_scolaire_id } = req.query;
   const conditions = []; const params = [];
   let join = '';
   if (classe_id) { join = 'JOIN inscription i ON i.eleve_id = f.eleve_id AND i.annee_scolaire_id = f.annee_scolaire_id'; params.push(classe_id); conditions.push(`i.classe_id = $${params.length}`); }
   if (eleve_id) { params.push(eleve_id); conditions.push(`f.eleve_id = $${params.length}`); }
   if (statut) { params.push(statut); conditions.push(`f.statut = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`f.annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const activeId = await anneeActiveId();
+    if (activeId) { params.push(activeId); conditions.push(`f.annee_scolaire_id = $${params.length}`); }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT DISTINCT f.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, e.matricule,
@@ -275,10 +272,16 @@ router.post('/frais', authenticate, authorize(...ROLES_FINANCE), validate({ body
 
 // --- Paiements --- RG-101/102 : lié à un frais, statut recalculé (impaye/partiel/paye)
 router.get('/paiements', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
-  const { eleve_id, frais_id } = req.query;
+  const { eleve_id, frais_id, annee_scolaire_id } = req.query;
   const conditions = []; const params = [];
   if (eleve_id) { params.push(eleve_id); conditions.push(`p.eleve_id = $${params.length}`); }
   if (frais_id) { params.push(frais_id); conditions.push(`p.frais_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`f.annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const activeId = await anneeActiveId();
+    if (activeId) { params.push(activeId); conditions.push(`f.annee_scolaire_id = $${params.length}`); }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT p.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, f.libelle AS frais_libelle
@@ -324,9 +327,9 @@ router.post('/paiements', authenticate, authorize(...ROLES_FINANCE), authorizePe
     // XXXVII : mouvement de caisse (entrée)
     if (caisse_id) {
       await client.query(
-        `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, paiement_id, utilisateur_id)
-         VALUES ($1,'entree',$2,$3,$4,$5)`,
-        [caisse_id, montant, recu, paiementRows[0].id, req.user.type === 'utilisateur' ? req.user.id : null]
+        `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, paiement_id, annee_scolaire_id, utilisateur_id)
+         VALUES ($1,'entree',$2,$3,$4,$5,$6)`,
+        [caisse_id, montant, recu, paiementRows[0].id, fraisRows[0].annee_scolaire_id, req.user.type === 'utilisateur' ? req.user.id : null]
       );
     }
 
@@ -404,9 +407,9 @@ router.post('/paiements/lot', authenticate, authorize(...ROLES_FINANCE), authori
 
       if (caisse_id) {
         await client.query(
-          `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, paiement_id, utilisateur_id)
-           VALUES ($1,'entree',$2,$3,$4,$5)`,
-          [caisse_id, part, recu, paiementRows[0].id, req.user.type === 'utilisateur' ? req.user.id : null]
+          `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, paiement_id, annee_scolaire_id, utilisateur_id)
+           VALUES ($1,'entree',$2,$3,$4,$5,$6)`,
+          [caisse_id, part, recu, paiementRows[0].id, frais.annee_scolaire_id, req.user.type === 'utilisateur' ? req.user.id : null]
         );
       }
 
@@ -432,32 +435,37 @@ router.post('/paiements/lot', authenticate, authorize(...ROLES_FINANCE), authori
 
 // --- Dépenses / Caisse ---
 router.get('/depenses', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const params = anneeId ? [anneeId] : [];
   const { rows } = await query(
     `SELECT d.*, cd.nom AS categorie_nom FROM depense d JOIN categorie_depense cd ON cd.id = d.categorie_id
-     ORDER BY d.date_depense DESC`
+     ${anneeId ? 'WHERE d.annee_scolaire_id = $1' : ''}
+     ORDER BY d.date_depense DESC`, params
   );
   res.json(rows);
 }));
 
 router.post('/depenses', authenticate, authorize(...ROLES_FINANCE), authorizePermission('finance.write'), validate({ body: creerDepenseSchema }), asyncHandler(async (req, res) => {
-  const { categorie_id, libelle, montant, date_depense, mode_paiement, reference, observation, caisse_id } = req.body;
+  const { categorie_id, annee_scolaire_id, libelle, montant, date_depense, mode_paiement, reference, observation, caisse_id } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const anneeId = Number(annee_scolaire_id || await anneeActiveId(client.query.bind(client)));
+    if (!anneeId) throw new ApiError(409, 'Aucune année scolaire active pour rattacher cette dépense.');
     // Numéro de pièce comptable officiel (DEP-2026-0001...), même mécanisme que les reçus
     // de paiement — pour que chaque sortie de caisse soit elle aussi traçable sans trou.
     const piece = await numeroSequentiel(client.query.bind(client), 'DEP');
     const { rows } = await client.query(
-      `INSERT INTO depense (categorie_id, libelle, montant, date_depense, mode_paiement, reference, piece_numero, utilisateur_id, observation)
-       VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9) RETURNING *`,
-      [categorie_id, libelle, montant, date_depense, mode_paiement, reference || null, piece,
+      `INSERT INTO depense (categorie_id, annee_scolaire_id, libelle, montant, date_depense, mode_paiement, reference, piece_numero, utilisateur_id, observation)
+       VALUES ($1,$2,$3,COALESCE($4,CURRENT_DATE),$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [categorie_id, anneeId, libelle, montant, date_depense, mode_paiement, reference || null, piece,
         req.user.type === 'utilisateur' ? req.user.id : null, observation || null]
     );
     if (caisse_id) {
       await client.query(
-        `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, depense_id, utilisateur_id)
-         VALUES ($1,'sortie',$2,$3,$4,$5)`,
-        [caisse_id, montant, reference || piece, rows[0].id, req.user.type === 'utilisateur' ? req.user.id : null]
+        `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, depense_id, annee_scolaire_id, utilisateur_id)
+         VALUES ($1,'sortie',$2,$3,$4,$5,$6)`,
+        [caisse_id, montant, reference || piece, rows[0].id, anneeId, req.user.type === 'utilisateur' ? req.user.id : null]
       );
     }
     await tracerFinance(client.query.bind(client), req, 'creation', 'depense', rows[0].id, null, rows[0]);
@@ -485,8 +493,11 @@ router.get('/caisses', authenticate, authorize(...ROLES_FINANCE), asyncHandler(a
 
 router.get('/mouvements', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
   const { caisse_id } = req.query;
-  const params = []; let where = '';
-  if (caisse_id) { params.push(caisse_id); where = 'WHERE caisse_id = $1'; }
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const params = []; const conditions = [];
+  if (caisse_id) { params.push(caisse_id); conditions.push(`caisse_id = $${params.length}`); }
+  if (anneeId) { params.push(anneeId); conditions.push(`annee_scolaire_id = $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(`SELECT * FROM mouvement_caisse ${where} ORDER BY date_mouvement DESC LIMIT 200`, params);
   res.json(rows);
 }));
@@ -495,9 +506,10 @@ router.get('/mouvements', authenticate, authorize(...ROLES_FINANCE), asyncHandle
 // Historique des arrêtés déjà effectués pour une caisse (le plus récent en premier) — sert
 // à afficher "dernière clôture le X, écart de Y Ar" dans l'écran Caisse & Dépenses.
 router.get('/caisses/:id/clotures', authenticate, authorize(...ROLES_FINANCE), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
   const { rows } = await query(
-    `SELECT * FROM cloture_caisse WHERE caisse_id = $1 ORDER BY date_cloture DESC, id DESC`,
-    [req.params.id]
+    `SELECT * FROM cloture_caisse WHERE caisse_id = $1${anneeId ? ' AND annee_scolaire_id = $2' : ''} ORDER BY date_cloture DESC, id DESC`,
+    anneeId ? [req.params.id, anneeId] : [req.params.id]
   );
   res.json(rows);
 }));
@@ -508,11 +520,13 @@ router.get('/caisses/:id/clotures', authenticate, authorize(...ROLES_FINANCE), v
 // quel — jamais utilisé pour corriger le solde en douce : une régularisation doit passer par
 // un mouvement_caisse explicite (dépense/entrée), pour que l'historique reste honnête.
 router.post('/caisses/:id/clore', authenticate, authorize(...ROLES_FINANCE), authorizePermission('finance.close'), validate({ params: idParamSchema, body: clotureCaisseSchema }), asyncHandler(async (req, res) => {
-  const { solde_reel, commentaire, date_cloture } = req.body;
+  const { annee_scolaire_id, solde_reel, commentaire, date_cloture } = req.body;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const anneeId = Number(annee_scolaire_id || await anneeActiveId(client.query.bind(client)));
+    if (!anneeId) throw new ApiError(409, 'Aucune année scolaire active pour rattacher cette clôture.');
 
     const { rows: caisseRows } = await client.query(
       `SELECT c.*,
@@ -529,10 +543,10 @@ router.post('/caisses/:id/clore', authenticate, authorize(...ROLES_FINANCE), aut
     const ecart = Number(solde_reel) - soldeTheorique;
 
     const { rows } = await client.query(
-      `INSERT INTO cloture_caisse (caisse_id, date_cloture, solde_theorique, solde_reel, ecart, commentaire, utilisateur_id, agent_id)
-       VALUES ($1,COALESCE($2,CURRENT_DATE),$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `INSERT INTO cloture_caisse (caisse_id, annee_scolaire_id, date_cloture, solde_theorique, solde_reel, ecart, commentaire, utilisateur_id, agent_id)
+       VALUES ($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
-        req.params.id, date_cloture || null, soldeTheorique, solde_reel, ecart, commentaire || null,
+        req.params.id, anneeId, date_cloture || null, soldeTheorique, solde_reel, ecart, commentaire || null,
         req.user.type === 'utilisateur' ? req.user.id : null,
         req.user.type === 'agent' ? req.user.id : null,
       ]

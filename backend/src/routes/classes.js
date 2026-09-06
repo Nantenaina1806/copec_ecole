@@ -27,9 +27,15 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
   const { annee_scolaire_id } = req.query;
   const params = [];
   let where = '';
-  if (annee_scolaire_id) {
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
     params.push(annee_scolaire_id);
     where = 'WHERE c.annee_scolaire_id = $1';
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id);
+      where = 'WHERE c.annee_scolaire_id = $1';
+    }
   }
   const { rows } = await query(
     `SELECT c.*, n.nom AS niveau_nom, cy.nom AS cycle_nom, cy.id AS cycle_id,

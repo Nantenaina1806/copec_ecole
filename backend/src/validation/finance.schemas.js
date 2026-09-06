@@ -55,6 +55,7 @@ const paiementLotSchema = z.object({
 
 const creerDepenseSchema = z.object({
   categorie_id: entierPositif(),
+  annee_scolaire_id: entierPositif({ requis: false }),
   libelle: texte({ max: 200 }),
   montant,
   date_depense: dateISO.optional().or(z.literal('')),
@@ -65,6 +66,7 @@ const creerDepenseSchema = z.object({
 });
 
 const clotureCaisseSchema = z.object({
+  annee_scolaire_id: entierPositif({ requis: false }),
   solde_reel: z.coerce.number({ invalid_type_error: 'solde_reel doit être un nombre.' }),
   commentaire: texteLong(),
   date_cloture: dateISO.optional().or(z.literal('')),

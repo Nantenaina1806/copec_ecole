@@ -185,11 +185,19 @@ router.get('/eleve/:eleveId/complet', authenticate, authorize(...ROLES_BULLETINS
 }));
 
 router.get('/', authenticate, authorize(...ROLES_BULLETINS), asyncHandler(async (req, res) => {
-  const { classe_id, eleve_id, bimestre_id } = req.query;
+  const { classe_id, eleve_id, bimestre_id, annee_scolaire_id } = req.query;
   const conditions = []; const params = [];
   if (classe_id) { params.push(classe_id); conditions.push(`b.classe_id = $${params.length}`); }
   if (eleve_id) { params.push(eleve_id); conditions.push(`b.eleve_id = $${params.length}`); }
   if (bimestre_id) { params.push(bimestre_id); conditions.push(`b.bimestre_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`b.annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id); conditions.push(`b.annee_scolaire_id = $${params.length}`);
+    }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT b.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, t.libelle AS bimestre_libelle, c.nom AS classe_nom

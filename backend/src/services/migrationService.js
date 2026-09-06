@@ -28,6 +28,17 @@ async function runMigrations() {
       ['pointage_eleve.id_bigint', `ALTER TABLE pointage_eleve ALTER COLUMN id TYPE BIGINT`],
       ['pointage_enseignant.id_bigint', `ALTER TABLE pointage_enseignant ALTER COLUMN id TYPE BIGINT`],
       ['absence_enseignant.id_bigint', `ALTER TABLE absence_enseignant ALTER COLUMN id TYPE BIGINT`],
+      // Finance annuelle : les caisses restent cumulatives, mais chaque dépense,
+      // mouvement et clôture est rattaché à l'année scolaire pour les rapports.
+      ['depense.annee_scolaire_id', `ALTER TABLE depense ADD COLUMN IF NOT EXISTS annee_scolaire_id INT REFERENCES annee_scolaire(id) ON DELETE RESTRICT`],
+      ['cloture_caisse.annee_scolaire_id', `ALTER TABLE cloture_caisse ADD COLUMN IF NOT EXISTS annee_scolaire_id INT REFERENCES annee_scolaire(id) ON DELETE RESTRICT`],
+      ['mouvement_caisse.annee_scolaire_id', `ALTER TABLE mouvement_caisse ADD COLUMN IF NOT EXISTS annee_scolaire_id INT REFERENCES annee_scolaire(id) ON DELETE RESTRICT`],
+      ['finance.backfill_depenses_annee', `UPDATE depense d SET annee_scolaire_id = a.id FROM annee_scolaire a WHERE d.annee_scolaire_id IS NULL AND d.date_depense BETWEEN a.date_debut AND a.date_fin`],
+      ['finance.backfill_mouvements_annee', `UPDATE mouvement_caisse m SET annee_scolaire_id = COALESCE((SELECT f.annee_scolaire_id FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.id = m.paiement_id), (SELECT d.annee_scolaire_id FROM depense d WHERE d.id = m.depense_id), (SELECT a.id FROM annee_scolaire a WHERE m.date_mouvement::date BETWEEN a.date_debut AND a.date_fin ORDER BY a.date_debut DESC LIMIT 1)) WHERE m.annee_scolaire_id IS NULL`],
+      ['finance.backfill_clotures_annee', `UPDATE cloture_caisse c SET annee_scolaire_id = a.id FROM annee_scolaire a WHERE c.annee_scolaire_id IS NULL AND c.date_cloture BETWEEN a.date_debut AND a.date_fin`],
+      ['finance.index_depenses_annee', `CREATE INDEX IF NOT EXISTS idx_depense_annee_date ON depense(annee_scolaire_id, date_depense)`],
+      ['finance.index_mouvements_annee', `CREATE INDEX IF NOT EXISTS idx_mouvement_annee_date ON mouvement_caisse(annee_scolaire_id, date_mouvement)`],
+      ['finance.index_clotures_annee', `CREATE INDEX IF NOT EXISTS idx_cloture_annee_date ON cloture_caisse(annee_scolaire_id, date_cloture)`],
     ];
     for (const [name, sql] of statements) {
       await client.query(sql);

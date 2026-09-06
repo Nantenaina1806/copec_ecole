@@ -11,7 +11,7 @@ const { creerNoteSchema, modifierNoteSchema, notesEnMasseSchema } = require('../
 const router = express.Router();
 
 router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
-  const { eleve_id, classe_id, matiere_id, bimestre_id, enseignant_id } = req.query;
+  const { eleve_id, classe_id, matiere_id, bimestre_id, enseignant_id, annee_scolaire_id } = req.query;
   const conditions = []; const params = [];
   const add = (col, val) => { params.push(val); conditions.push(`n.${col} = $${params.length}`); };
   if (eleve_id) add('eleve_id', eleve_id);
@@ -19,6 +19,14 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
   if (matiere_id) add('matiere_id', matiere_id);
   if (bimestre_id) add('bimestre_id', bimestre_id);
   if (enseignant_id) add('enseignant_id', enseignant_id);
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    add('annee_scolaire_id', annee_scolaire_id);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      add('annee_scolaire_id', activeRows[0].id);
+    }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT n.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, m.nom AS matiere_nom, m.couleur AS matiere_couleur,

@@ -48,11 +48,16 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
   const { classe_id, annee_scolaire_id, bimestre_id } = req.query;
   const conditions = []; const params = [];
   if (classe_id) { params.push(classe_id); conditions.push(`classe_id = $${params.length}`); }
-  if (annee_scolaire_id) { params.push(annee_scolaire_id); conditions.push(`annee_scolaire_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id); conditions.push(`annee_scolaire_id = $${params.length}`);
+    }
+  }
   if (bimestre_id) { params.push(bimestre_id); conditions.push(`bimestre_id = $${params.length}`); }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  // nb_epreuves : pour repérer d'un coup d'œil, dans la liste, les examens créés mais dont
-  // aucune épreuve n'a encore été programmée (utile au secrétariat pour relancer).
   const { rows } = await query(
     `SELECT ex.*, (SELECT COUNT(*)::int FROM examen_matiere em2 WHERE em2.examen_id = ex.id) AS nb_epreuves
      FROM examen ex ${where} ORDER BY ex.date_debut DESC`,

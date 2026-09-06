@@ -12,10 +12,19 @@ const router = express.Router();
 
 // --- Absences élèves ---
 router.get('/eleves', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
-  const { eleve_id, classe_id } = req.query;
+  const { eleve_id, classe_id, annee_scolaire_id } = req.query;
   const conditions = []; const params = [];
   if (eleve_id) { params.push(eleve_id); conditions.push(`ae.eleve_id = $${params.length}`); }
   if (classe_id) { params.push(classe_id); conditions.push(`edt.classe_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`(edt.annee_scolaire_id = $${params.length} OR EXISTS (SELECT 1 FROM inscription i WHERE i.eleve_id = ae.eleve_id AND i.annee_scolaire_id = $${params.length}))`);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id);
+      conditions.push(`(edt.annee_scolaire_id = $${params.length} OR EXISTS (SELECT 1 FROM inscription i WHERE i.eleve_id = ae.eleve_id AND i.annee_scolaire_id = $${params.length}))`);
+    }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT ae.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, edt.jour, m.nom AS matiere_nom

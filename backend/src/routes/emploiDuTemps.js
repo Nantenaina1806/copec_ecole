@@ -64,7 +64,14 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
   const conditions = ['edt.actif = TRUE']; const params = [];
   if (classe_id) { params.push(classe_id); conditions.push(`edt.classe_id = $${params.length}`); }
   if (enseignant_id) { params.push(enseignant_id); conditions.push(`edt.enseignant_id = $${params.length}`); }
-  if (annee_scolaire_id) { params.push(annee_scolaire_id); conditions.push(`edt.annee_scolaire_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`edt.annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id); conditions.push(`edt.annee_scolaire_id = $${params.length}`);
+    }
+  }
   const { rows } = await query(
     `SELECT edt.*, c.nom AS classe_nom, m.nom AS matiere_nom, m.couleur AS matiere_couleur, u.nom AS enseignant_nom, u.prenom AS enseignant_prenom
      FROM emploi_du_temps edt

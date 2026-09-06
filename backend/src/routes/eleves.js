@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { query } = require('../config/db');
+const { query, pool } = require('../config/db');
 const { asyncHandler, ApiError } = require('../middleware/errorHandler');
 const { authenticate, authorize, ROLES_TOUS_STAFF } = require('../middleware/auth');
 const { runImport, texte, optionnel } = require('../utils/importHelper');
@@ -10,6 +10,35 @@ const { creerEleveSchema, modifierEleveSchema } = require('../validation/eleves.
 const { uploadPublicImage, urlImagePublique } = require('../middleware/upload');
 
 const router = express.Router();
+
+async function genererMatriculeAtomique(client, matriculePrefix) {
+  const anneeCivile = new Date().getFullYear();
+  const { rows: existingCompteur } = await client.query(
+    `SELECT dernier_numero FROM compteur_recu WHERE prefixe = $1 AND annee = $2`,
+    [matriculePrefix, anneeCivile]
+  );
+  if (!existingCompteur.length) {
+    const { rows: maxRows } = await client.query(
+      `SELECT COALESCE(MAX(CASE WHEN SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'
+         THEN SUBSTRING(matricule FROM $1)::INT ELSE 0 END), 0) AS dernier
+       FROM eleve WHERE matricule LIKE $2`,
+      [matriculePrefix.length + 1, `${matriculePrefix}%`]
+    );
+    const initialVal = Number(maxRows[0]?.dernier || 0);
+    await client.query(
+      `INSERT INTO compteur_recu (prefixe, annee, dernier_numero) VALUES ($1, $2, $3)
+       ON CONFLICT (prefixe, annee) DO NOTHING`,
+      [matriculePrefix, anneeCivile, initialVal]
+    );
+  }
+  const { rows: incRows } = await client.query(
+    `UPDATE compteur_recu SET dernier_numero = dernier_numero + 1
+     WHERE prefixe = $1 AND annee = $2 RETURNING dernier_numero`,
+    [matriculePrefix, anneeCivile]
+  );
+  const num = incRows[0].dernier_numero;
+  return `${matriculePrefix}${String(num).padStart(4, '0')}`;
+}
 
 router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
   const { search, classe_id, niveau_id, cycle_id, annee_scolaire_id } = req.query;
@@ -161,23 +190,28 @@ router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body
   } = req.body;
 
   const qr_code_data = crypto.randomBytes(12).toString('hex');
-  const { rows: anneeRows } = await query('SELECT libelle FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
-  const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
-  const matriculePrefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
-  const { rows: compteurRows } = await query(
-    `SELECT COALESCE(MAX(CASE WHEN SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'
-       THEN SUBSTRING(matricule FROM $1)::INT ELSE 0 END), 0) AS dernier
-     FROM eleve WHERE matricule LIKE $2`,
-    [matriculePrefix.length + 1, `${matriculePrefix}%`]
-  );
-  const matricule = `${matriculePrefix}${String(Number(compteurRows[0].dernier) + 1).padStart(4, '0')}`;
-  const { rows } = await query(
-    `INSERT INTO eleve (matricule, nom, prenom, date_naissance, lieu_naissance, sexe, adresse, telephone, email, qr_code_data, numero_carte)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [matricule, nom, prenom, date_naissance || null, lieu_naissance || null, sexe || null, adresse || null,
-      telephone || null, email || null, qr_code_data, matricule]
-  );
-  res.status(201).json(rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: anneeRows } = await client.query('SELECT libelle FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
+    const matriculePrefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
+    const matricule = await genererMatriculeAtomique(client, matriculePrefix);
+
+    const { rows } = await client.query(
+      `INSERT INTO eleve (matricule, nom, prenom, date_naissance, lieu_naissance, sexe, adresse, telephone, email, qr_code_data, numero_carte)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [matricule, nom, prenom, date_naissance || null, lieu_naissance || null, sexe || null, adresse || null,
+        telephone || null, email || null, qr_code_data, matricule]
+    );
+    await client.query('COMMIT');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }));
 
 router.post('/:id/photo', authenticate, authorize('admin', 'secretaire'), validate({ params: idParamSchema }), uploadPublicImage.single('photo'), asyncHandler(async (req, res) => {

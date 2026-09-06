@@ -8,11 +8,20 @@ const { creerInscriptionSchema, modifierInscriptionSchema } = require('../valida
 
 const router = express.Router();
 
+const { pool } = require('../config/db');
+
 router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
   const { classe_id, annee_scolaire_id, eleve_id } = req.query;
   const conditions = []; const params = [];
   if (classe_id) { params.push(classe_id); conditions.push(`i.classe_id = $${params.length}`); }
-  if (annee_scolaire_id) { params.push(annee_scolaire_id); conditions.push(`i.annee_scolaire_id = $${params.length}`); }
+  if (annee_scolaire_id && annee_scolaire_id !== 'all') {
+    params.push(annee_scolaire_id); conditions.push(`i.annee_scolaire_id = $${params.length}`);
+  } else if (!annee_scolaire_id) {
+    const { rows: activeRows } = await query('SELECT id FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+    if (activeRows[0]) {
+      params.push(activeRows[0].id); conditions.push(`i.annee_scolaire_id = $${params.length}`);
+    }
+  }
   if (eleve_id) { params.push(eleve_id); conditions.push(`i.eleve_id = $${params.length}`); }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
@@ -42,43 +51,54 @@ router.get('/prochain-numero', authenticate, authorize('admin', 'secretaire'), a
 // POST /inscriptions -> RG-001/RG-002 : inscrit un élève dans une classe pour une année (doit être active sauf droit spécial)
 router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body: creerInscriptionSchema }), asyncHandler(async (req, res) => {
   const { eleve_id, classe_id, annee_scolaire_id, observation } = req.body;
-  const { rows: annee } = await query('SELECT actif FROM annee_scolaire WHERE id = $1', [annee_scolaire_id]);
-  if (!annee[0]) throw new ApiError(404, 'Année scolaire introuvable.');
-  if (!annee[0].actif && req.user.role !== 'admin') {
-    throw new ApiError(403, "Inscription sur une année non active refusée (RG-001) : droit administrateur requis.");
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: annee } = await client.query('SELECT actif FROM annee_scolaire WHERE id = $1', [annee_scolaire_id]);
+    if (!annee[0]) throw new ApiError(404, 'Année scolaire introuvable.');
+    if (!annee[0].actif && req.user.role !== 'admin') {
+      throw new ApiError(403, "Inscription sur une année non active refusée (RG-001) : droit administrateur requis.");
+    }
+    // Lock classe row to ensure serializable/collision-free numero_classe calculation
+    const { rows: classeRows } = await client.query(
+      'SELECT id FROM classe WHERE id = $1 AND annee_scolaire_id = $2 FOR UPDATE',
+      [classe_id, annee_scolaire_id]
+    );
+    if (!classeRows[0]) throw new ApiError(400, "La classe choisie n'appartient pas à cette année scolaire.");
+
+    const { rows: numeroRows } = await client.query(
+      `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
+       FROM inscription
+       WHERE classe_id = $1 AND annee_scolaire_id = $2`,
+      [classe_id, annee_scolaire_id]
+    );
+    const numero_classe = numeroRows[0].prochain;
+
+    const { rows } = await client.query(
+      `INSERT INTO inscription (eleve_id, classe_id, annee_scolaire_id, numero_classe, observation)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [eleve_id, classe_id, annee_scolaire_id, numero_classe || null, observation || null]
+    );
+
+    await client.query(
+      `INSERT INTO audit_log (utilisateur_id, agent_id, action, table_nom, record_id, nouvelle_valeur)
+       VALUES ($1,$2,'creation','inscription',$3,$4)`,
+      [
+        req.user.type === 'utilisateur' ? req.user.id : null,
+        req.user.type === 'agent' ? req.user.id : null,
+        rows[0].id,
+        JSON.stringify({ eleve_id, classe_id }),
+      ]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  const { rows: classeRows } = await query(
-    'SELECT id FROM classe WHERE id = $1 AND annee_scolaire_id = $2',
-    [classe_id, annee_scolaire_id]
-  );
-  if (!classeRows[0]) throw new ApiError(400, "La classe choisie n'appartient pas à cette année scolaire.");
-
-  const { rows: numeroRows } = await query(
-    `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
-     FROM inscription
-     WHERE classe_id = $1 AND annee_scolaire_id = $2`,
-    [classe_id, annee_scolaire_id]
-  );
-  const numero_classe = numeroRows[0].prochain;
-
-  const { rows } = await query(
-    `INSERT INTO inscription (eleve_id, classe_id, annee_scolaire_id, numero_classe, observation)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [eleve_id, classe_id, annee_scolaire_id, numero_classe || null, observation || null]
-  );
-
-  await query(
-    `INSERT INTO audit_log (utilisateur_id, agent_id, action, table_nom, record_id, nouvelle_valeur)
-     VALUES ($1,$2,'creation','inscription',$3,$4)`,
-    [
-      req.user.type === 'utilisateur' ? req.user.id : null,
-      req.user.type === 'agent' ? req.user.id : null,
-      rows[0].id,
-      JSON.stringify({ eleve_id, classe_id }),
-    ]
-  );
-
-  res.status(201).json(rows[0]);
 }));
 
 router.put('/:id', authenticate, authorize('admin', 'secretaire'), validate({ params: idParamSchema, body: modifierInscriptionSchema }), asyncHandler(async (req, res) => {

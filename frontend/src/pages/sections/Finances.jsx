@@ -112,7 +112,7 @@ function ControleFinance() {
   const s = controle?.synthese || {};
   return <div className="space-y-4">
     <div className="card flex flex-wrap items-end justify-between gap-3">
-      <div><h3 className="font-semibold text-slate-800 flex items-center gap-2"><ShieldCheck size={18}/> Contrôle financier</h3><p className="text-sm text-slate-500 mt-1">Vérifications automatiques d'intégrité et situation des élèves.</p></div>
+      <div><h3 className="font-semibold text-slate-800 flex items-center gap-2"><ShieldCheck size={18}/> Contrôle financier</h3><p className="text-sm text-slate-500 mt-1">Vérifications automatiques d&apos;intégrité et situation des élèves.</p></div>
       <button className="btn-secondary" onClick={reload}>Actualiser</button>
     </div>
     {loading ? <div className="card text-sm text-slate-500">Contrôle en cours…</div> : error ? <div className="card text-sm text-red-600">Impossible de charger le contrôle financier.</div> : <>

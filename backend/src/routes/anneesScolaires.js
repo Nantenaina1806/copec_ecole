@@ -72,15 +72,38 @@ router.put('/:id/activer', authenticate, authorize('admin'), validate({ params: 
 // body: { mappings: [{ classe_source_id, classe_cible_id }], annee_cible_id }
 router.post('/:id/promotion', authenticate, authorize('admin'), validate({ params: idParamSchema, body: promotionSchema }), asyncHandler(async (req, res) => {
   const { mappings, annee_cible_id } = req.body;
+  const anneeSourceId = Number(req.params.id);
+  if (anneeSourceId === Number(annee_cible_id)) {
+    throw new ApiError(400, "L'année source et l'année cible doivent être différentes.");
+  }
 
   const client = await pool.connect();
   let totalPromus = 0;
   let totalExclus = 0;
   try {
     await client.query('BEGIN');
+    const { rows: annees } = await client.query(
+      'SELECT id FROM annee_scolaire WHERE id = ANY($1::int[])',
+      [[anneeSourceId, annee_cible_id]]
+    );
+    if (annees.length !== 2) throw new ApiError(404, 'Année source ou année cible introuvable.');
+
     for (const m of mappings) {
       const { classe_source_id, classe_cible_id, eleve_ids_exclus = [] } = m;
+      const { rows: classes } = await client.query(
+        `SELECT id, annee_scolaire_id FROM classe WHERE id = ANY($1::int[])`,
+        [[classe_source_id, classe_cible_id]]
+      );
+      const classeSource = classes.find((c) => Number(c.id) === Number(classe_source_id));
+      const classeCible = classes.find((c) => Number(c.id) === Number(classe_cible_id));
+      if (!classeSource || Number(classeSource.annee_scolaire_id) !== anneeSourceId) {
+        throw new ApiError(400, `La classe source ${classe_source_id} n'appartient pas à l'année source.`);
+      }
+      if (!classeCible || Number(classeCible.annee_scolaire_id) !== Number(annee_cible_id)) {
+        throw new ApiError(400, `La classe cible ${classe_cible_id} n'appartient pas à l'année cible.`);
+      }
       totalExclus += eleve_ids_exclus.length;
+      await client.query('SELECT id FROM classe WHERE id = $1 FOR UPDATE', [classe_cible_id]);
       const { rows: eleves } = await client.query(
         `SELECT eleve_id FROM inscription
          WHERE classe_id = $1 AND annee_scolaire_id = $2 AND statut = 'inscrit'
@@ -88,13 +111,19 @@ router.post('/:id/promotion', authenticate, authorize('admin'), validate({ param
         [classe_source_id, req.params.id, eleve_ids_exclus]
       );
       for (const e of eleves) {
-        await client.query(
-          `INSERT INTO inscription (eleve_id, classe_id, annee_scolaire_id, statut)
-           VALUES ($1,$2,$3,'inscrit')
-           ON CONFLICT (eleve_id, annee_scolaire_id) DO NOTHING`,
-          [e.eleve_id, classe_cible_id, annee_cible_id]
+        const { rows: prochainRows } = await client.query(
+          `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
+           FROM inscription WHERE classe_id = $1 AND annee_scolaire_id = $2`,
+          [classe_cible_id, annee_cible_id]
         );
-        totalPromus += 1;
+        const { rows: inserted } = await client.query(
+          `INSERT INTO inscription (eleve_id, classe_id, annee_scolaire_id, numero_classe, statut)
+           VALUES ($1,$2,$3,$4,'inscrit')
+           ON CONFLICT (eleve_id, annee_scolaire_id) DO NOTHING
+           RETURNING id`,
+          [e.eleve_id, classe_cible_id, annee_cible_id, prochainRows[0].prochain]
+        );
+        if (inserted[0]) totalPromus += 1;
       }
     }
     await client.query('COMMIT');
