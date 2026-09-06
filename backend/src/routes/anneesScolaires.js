@@ -113,8 +113,9 @@ router.post('/:id/promotion', authenticate, authorize('admin'), validate({ param
   }
 }));
 
-// POST /annees-scolaires/:id/dupliquer-structure -> copie la structure (classes, matières par
-// classe, affectations enseignants, emploi du temps) d'une année source vers l'année :id (cible).
+// POST /annees-scolaires/:id/dupliquer-structure -> copie la structure réutilisable (classes,
+// matières par classe, affectations enseignants, bimestres et tarifs) d'une année source vers
+// l'année :id (cible). L'emploi du temps et toutes les données d'activité restent à zéro.
 // N'écrit JAMAIS dans `inscription` : les effectifs par classe démarrent à 0 sur l'année cible,
 // et ne se remplissent qu'via l'Outil de promotion (RG : un élève n'est "inscrit" que par un
 // acte explicite, jamais par copie de structure).
@@ -200,30 +201,50 @@ router.post('/:id/dupliquer-structure', authenticate, authorize('admin'), valida
       );
     }
 
-    // 5) emploi_du_temps : créneaux (jour, heures, salle), remappés vers les nouvelles classes.
-    //    Les salles ne sont pas scopées par année (table `salle` globale) : salle_id est copié tel quel.
-    const { rows: edtSource } = await client.query(
-      `SELECT classe_id, matiere_id, enseignant_id, jour, heure_debut, heure_fin, salle, salle_id, actif
-       FROM emploi_du_temps WHERE annee_scolaire_id = $1`,
-      [anneeSourceId]
+    // 5) Bimestres : nouveau contexte pédagogique, dates décalées selon le début
+    //    de l'année cible. Les notes/bulletins ne sont jamais copiés.
+    const { rows: sourceAnnee } = await client.query(
+      'SELECT date_debut, date_fin FROM annee_scolaire WHERE id = $1', [anneeSourceId]
     );
-    let edtCopies = 0;
-    for (const e of edtSource) {
-      const nouveauClasseId = classeIdMap.get(e.classe_id);
-      if (!nouveauClasseId) continue;
+    const { rows: cibleAnnee } = await client.query(
+      'SELECT date_debut, date_fin FROM annee_scolaire WHERE id = $1', [anneeCibleId]
+    );
+    const decalageJours = Math.round((new Date(cibleAnnee[0].date_debut) - new Date(sourceAnnee[0].date_debut)) / 86400000);
+    const { rows: bimestresSource } = await client.query(
+      `SELECT numero, libelle, date_debut, date_fin, actif
+       FROM bimestre WHERE annee_scolaire_id = $1 ORDER BY numero`, [anneeSourceId]
+    );
+    for (const b of bimestresSource) {
       await client.query(
-        `INSERT INTO emploi_du_temps (classe_id, matiere_id, enseignant_id, annee_scolaire_id, jour, heure_debut, heure_fin, salle, salle_id, actif)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [nouveauClasseId, e.matiere_id, e.enseignant_id, anneeCibleId, e.jour, e.heure_debut, e.heure_fin, e.salle, e.salle_id, e.actif]
+        `INSERT INTO bimestre (annee_scolaire_id, numero, libelle, date_debut, date_fin, actif)
+         VALUES ($1,$2,$3,($4::date + $5::int),($6::date + $5::int),$7)
+         ON CONFLICT (annee_scolaire_id, numero) DO NOTHING`,
+        [anneeCibleId, b.numero, b.libelle, b.date_debut, decalageJours, b.date_fin, b.actif]
       );
-      edtCopies += 1;
+    }
+
+    // 6) Grille tarifaire : on recopie les montants de référence, mais jamais les
+    //    frais élèves ni les paiements, qui restent propres à chaque année.
+    const { rows: tarifsSource } = await client.query(
+      `SELECT niveau_id, type_frais, libelle, montant, recurrent_mensuel, jour_echeance, actif
+       FROM tarif_frais WHERE annee_scolaire_id = $1`, [anneeSourceId]
+    );
+    for (const tarif of tarifsSource) {
+      await client.query(
+        `INSERT INTO tarif_frais (niveau_id, annee_scolaire_id, type_frais, libelle, montant, recurrent_mensuel, jour_echeance, actif)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (niveau_id, type_frais, annee_scolaire_id) DO NOTHING`,
+        [tarif.niveau_id, anneeCibleId, tarif.type_frais, tarif.libelle, tarif.montant,
+          tarif.recurrent_mensuel, tarif.jour_echeance, tarif.actif]
+      );
     }
 
     await client.query('COMMIT');
     res.json({
-      message: 'Structure dupliquée avec succès. Les effectifs (inscriptions) démarrent à 0 : utilisez l\'Outil de promotion pour inscrire les élèves.',
+      message: 'Nouvelle année initialisée. Les inscriptions, notes, présences, frais élèves et paiements démarrent à 0. L\'historique de l\'ancienne année est conservé.',
       classes_creees: classeIdMap.size,
-      creneaux_edt_copies: edtCopies,
+      bimestres_crees: bimestresSource.length,
+      tarifs_copies: tarifsSource.length,
     });
   } catch (err) {
     await client.query('ROLLBACK');

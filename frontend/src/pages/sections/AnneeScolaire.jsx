@@ -34,10 +34,11 @@ export default function AnneeScolaire() {
     setCreationBusy(true);
     try {
       const { data: nouvelleAnnee } = await client.post('/annees-scolaires', form);
-      if (dupliquerDepuis) {
+      const sourceId = dupliquerDepuis || anneeActive?.id;
+      if (sourceId) {
         try {
-          await client.post(`/annees-scolaires/${nouvelleAnnee.id}/dupliquer-structure`, { annee_source_id: Number(dupliquerDepuis) });
-          toast.success('Année créée et structure des classes dupliquée. Les effectifs démarrent à 0 : utilisez l\'Outil de promotion pour inscrire les élèves.');
+          await client.post(`/annees-scolaires/${nouvelleAnnee.id}/dupliquer-structure`, { annee_source_id: Number(sourceId) });
+          toast.success('Année créée : structure, bimestres et grille tarifaire initialisés. Les données d’activité démarrent à 0.');
         } catch (dupErr) {
           toast.error(`Année créée, mais la duplication de structure a échoué : ${apiErrorMessage(dupErr)}`);
         }
@@ -139,14 +140,14 @@ export default function AnneeScolaire() {
           </div>
           {annees?.length > 0 && (
             <div>
-              <label className="label">Dupliquer la structure des classes depuis (optionnel)</label>
+              <label className="label">Initialiser depuis une année existante</label>
               <select className="input" value={dupliquerDepuis} onChange={(e) => setDupliquerDepuis(e.target.value)}>
-                <option value="">— Ne pas dupliquer, partir de zéro —</option>
+                <option value="">— Année active (recommandé) —</option>
                 {annees.map((a) => <option key={a.id} value={a.id}>{a.libelle}</option>)}
               </select>
               <p className="text-xs text-slate-500 mt-1">
-                Copie les classes, les matières par classe, les affectations enseignants et l&apos;emploi du temps depuis l&apos;année choisie.
-                Les effectifs (inscriptions) démarrent toujours à 0 : utilisez ensuite l&apos;Outil de promotion pour inscrire les élèves.
+                Copie les classes, matières par classe, affectations enseignants, bimestres et tarifs.
+                Les inscriptions, notes, présences, frais élèves et paiements restent à 0. L&apos;emploi du temps doit être recréé pour la nouvelle année.
               </p>
             </div>
           )}
