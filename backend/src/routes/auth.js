@@ -137,6 +137,19 @@ router.get('/me', authenticate, asyncHandler(async (req, res) => {
     ({ rows: [row] } = await query('SELECT id, nom, prenom, matricule, email, photo_url, actif FROM eleve WHERE id = $1', [id]));
   }
   if (!row) throw new ApiError(404, 'Utilisateur introuvable.');
+  // Pour les comptes staff (utilisateur / agent) : joindre la liste des permissions
+  // (codes) attribuées au rôle afin que le frontend puisse rendre les actions au
+  // niveau 'permission' et éviter des 403 inattendus.
+  if (type === 'utilisateur' || type === 'agent') {
+    const { rows: permRows } = await query(
+      'SELECT p.code FROM permission p JOIN role_permission rp ON rp.permission_id=p.id WHERE rp.role=$1',
+      [row.role]
+    );
+    row.permissions = permRows.map((r) => r.code);
+  } else {
+    row.permissions = [];
+  }
+
   res.json(row);
 }));
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import client, { apiErrorMessage } from '../api/client';
 
 const AuthContext = createContext(null);
@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
     }
   });
   const [token, setToken] = useState(() => localStorage.getItem('copec_token'));
-
+  
   const persist = useCallback((newToken, newUser) => {
     localStorage.setItem('copec_token', newToken);
     localStorage.setItem('copec_user', JSON.stringify(newUser));
@@ -23,18 +23,41 @@ export function AuthProvider({ children }) {
     setUser(newUser);
   }, []);
 
+  const fetchProfile = useCallback(async () => {
+    try {
+      const { data } = await client.get('/auth/me');
+      // backend renvoie désormais permissions pour les comptes staff
+      const profile = { ...data };
+      localStorage.setItem('copec_user', JSON.stringify(profile));
+      setUser(profile);
+      return profile;
+    } catch (err) {
+      // si token invalide/expiré, nettoyer local
+      if (err.response?.status === 401) {
+        localStorage.removeItem('copec_token');
+        localStorage.removeItem('copec_user');
+        setToken(null);
+        setUser(null);
+      }
+      return null;
+    }
+  }, []);
+
   // Essaie /auth/login (admin/enseignant) puis /auth/login-agent en cas de 401 (Login.jsx page 1)
   const loginStaff = useCallback(async (email, mot_de_passe) => {
     try {
       const { data } = await client.post('/auth/login', { email, mot_de_passe });
       persist(data.token, { ...data.user, type: 'utilisateur' });
-      return data.user;
+      // Récupérer le profil complet (permissions)
+      await fetchProfile();
+      return JSON.parse(localStorage.getItem('copec_user')) || data.user;
     } catch (err) {
       if (err.response?.status === 401) {
         try {
           const { data } = await client.post('/auth/login-agent', { email, mot_de_passe });
           persist(data.token, { ...data.user, type: 'agent' });
-          return data.user;
+          await fetchProfile();
+          return JSON.parse(localStorage.getItem('copec_user')) || data.user;
         } catch (err2) {
           throw new Error(apiErrorMessage(err2));
         }
@@ -47,6 +70,7 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await client.post('/auth/login-eleve', { matricule, email });
       persist(data.token, { ...data.user, type: 'eleve', role: 'eleve' });
+      // élèves n'ont pas de permissions côté backend
       return data.user;
     } catch (err) {
       throw new Error(apiErrorMessage(err));
@@ -71,9 +95,24 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  useEffect(() => {
+    // Au montage, si un token existe, tenter de rafraîchir le profil
+    if (token) {
+      fetchProfile();
+    }
+  }, [token, fetchProfile]);
+
+  const permissions = user?.permissions || [];
+  const hasPermission = useCallback((code) => {
+    if (!code) return true;
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    return permissions.includes(code);
+  }, [user, permissions]);
+
   const value = useMemo(() => ({
-    user, token, isAuthenticated: !!token, loginStaff, loginEleve, logout, updateUser,
-  }), [user, token, loginStaff, loginEleve, logout, updateUser]);
+    user, token, permissions, isAuthenticated: !!token, loginStaff, loginEleve, logout, updateUser, fetchProfile, hasPermission,
+  }), [user, token, permissions, loginStaff, loginEleve, logout, updateUser, fetchProfile, hasPermission]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
