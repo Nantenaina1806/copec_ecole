@@ -2,7 +2,9 @@ const express = require('express');
 const { query } = require('../config/db');
 const { asyncHandler, ApiError } = require('../middleware/errorHandler');
 const { authenticate, authorize, authorizePermission, ROLES_TOUS_STAFF } = require('../middleware/auth');
-const { upload, urlFichier, supprimerFichierLocal, TAILLE_MAX_OCTETS } = require('../middleware/upload');
+const { upload, urlFichier, supprimerFichierLocal, recupererObjetS3, TAILLE_MAX_OCTETS, UPLOAD_DIR, S3_ENABLED } = require('../middleware/upload');
+const fs = require('fs');
+const path = require('path');
 const { validate } = require('../middleware/validate');
 const { idParamSchema } = require('../validation/common');
 const { listeDocumentsQuerySchema, creerDocumentSchema } = require('../validation/documents.schemas');
@@ -12,7 +14,30 @@ const router = express.Router();
 router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), validate({ query: listeDocumentsQuerySchema }), asyncHandler(async (req, res) => {
   const { eleve_id } = req.query;
   const { rows } = await query('SELECT * FROM document_eleve WHERE eleve_id = $1 ORDER BY created_at DESC', [eleve_id]);
-  res.json(rows);
+  const marker = '/uploads/documents/';
+  res.json(rows.map((document) => document.fichier_url?.includes(marker)
+    ? { ...document, fichier_url: `${req.protocol}://${req.get('host')}/api/documents/${document.id}/fichier` }
+    : document));
+}));
+
+router.get('/:id/fichier', authenticate, authorize(...ROLES_TOUS_STAFF), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
+  const { rows } = await query('SELECT nom_fichier, fichier_url FROM document_eleve WHERE id = $1', [req.params.id]);
+  if (!rows[0]) throw new ApiError(404, 'Document introuvable.');
+  const fichierUrl = rows[0].fichier_url || '';
+  const filename = path.basename(rows[0].nom_fichier || 'document');
+  res.set('Content-Disposition', `inline; filename="${filename}"`);
+  if (S3_ENABLED) {
+    const base = (process.env.S3_PUBLIC_URL || '').replace(/\/$/, '');
+    if (!fichierUrl.startsWith(`${base}/documents/`)) throw new ApiError(404, 'Fichier introuvable.');
+    const object = await recupererObjetS3(fichierUrl.slice(base.length + 1));
+    return object.Body.pipe(res);
+  }
+  const marker = '/uploads/documents/';
+  if (!fichierUrl.includes(marker)) throw new ApiError(404, 'Fichier introuvable.');
+  const localName = path.basename(fichierUrl.split(marker)[1]);
+  const filePath = path.join(UPLOAD_DIR, localName);
+  if (!fs.existsSync(filePath)) throw new ApiError(404, 'Fichier introuvable.');
+  return res.sendFile(filePath);
 }));
 
 // Accepte deux modes d'envoi :

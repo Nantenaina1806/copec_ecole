@@ -234,7 +234,10 @@ router.get('/', authenticate, authorize(...ROLES_FINANCE_ENSEIGNANT), asyncHandl
 router.post('/', authenticate, authorize(...ROLES_FINANCE), authorizePermission('paie.write'), validate({ body: creerPaieSchema }), asyncHandler(async (req, res) => {
   const { enseignant_id, salaire_id, mois, annee, heures_normales, heures_supplementaires, prime, retenue } = req.body;
 
-  const { rows: sal } = await query('SELECT type_salaire, montant FROM salaire_enseignant WHERE id = $1', [salaire_id]);
+  const { rows: sal } = await query(
+    'SELECT type_salaire, montant FROM salaire_enseignant WHERE id = $1 AND enseignant_id = $2',
+    [salaire_id, enseignant_id]
+  );
   const grille = sal[0];
   if (!grille) throw new ApiError(400, 'salaire_id invalide.');
 
@@ -272,7 +275,10 @@ router.put('/:id', authenticate, authorize(...ROLES_FINANCE), authorizePermissio
   }
 
   const idSalaire = salaire_id !== undefined ? salaire_id : existant[0].salaire_id;
-  const { rows: sal } = await query('SELECT type_salaire, montant FROM salaire_enseignant WHERE id = $1', [idSalaire]);
+  const { rows: sal } = await query(
+    'SELECT type_salaire, montant FROM salaire_enseignant WHERE id = $1 AND enseignant_id = $2',
+    [idSalaire, existant[0].enseignant_id]
+  );
   const grille = sal[0];
   if (!grille) throw new ApiError(400, 'salaire_id invalide.');
 

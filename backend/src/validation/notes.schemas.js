@@ -23,4 +23,17 @@ const modifierNoteSchema = z
   })
   .refine((d) => Object.keys(d).length > 0, { message: 'Aucune donnée à modifier.' });
 
-module.exports = { creerNoteSchema, modifierNoteSchema };
+const notesEnMasseSchema = z.object({
+  matiere_id: entierPositif(),
+  bimestre_id: entierPositif(),
+  enseignant_id: entierPositif({ requis: false }),
+  type_evaluation: texte({ max: 50, requis: false }),
+  coefficient_evaluation: entierPositif({ requis: false }),
+  notes: z.array(z.object({
+    eleve_id: entierPositif(),
+    note_valeur: noteValeur,
+    commentaire: texteLong(),
+  })).min(1).max(200),
+});
+
+module.exports = { creerNoteSchema, modifierNoteSchema, notesEnMasseSchema };

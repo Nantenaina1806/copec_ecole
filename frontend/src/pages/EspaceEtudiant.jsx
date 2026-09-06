@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList, Bell, LogOut,
   GraduationCap, CalendarClock, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
-import client from '../api/client';
+import client, { apiErrorMessage } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useFetch } from '../hooks/useFetch';
 import { LoadingScreen, ErrorState, EmptyState, SkeletonStatCards } from '../components/Feedback';
@@ -37,10 +37,12 @@ export default function EspaceEtudiant() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState('dashboard');
   const { data, loading, error, reload } = useFetch(() => client.get(`/eleves/${user.id}/fiche`).then((r) => r.data), []);
-  const { data: rawNotifications, loading: loadingNotif, error: errorNotif, reload: reloadNotif } = useFetch(
+  const { data: rawNotifications, loading: loadingNotif, error: errorNotif, reload: reloadNotif, setData: setNotifications } = useFetch(
     () => client.get('/communication/notifications').then((r) => r.data),
     []
   );
+  const [notificationBusy, setNotificationBusy] = useState(null);
+  const [notificationActionError, setNotificationActionError] = useState('');
   const { data: rawDevoirs, loading: loadingDevoirs, error: errorDevoirs, reload: reloadDevoirs } = useFetch(
     () => (data?.inscription?.classe_id
       ? client.get('/devoirs', { params: { classe_id: data.inscription.classe_id } }).then((r) => r.data)
@@ -59,6 +61,21 @@ export default function EspaceEtudiant() {
     const aRendre = (devoirs || []).filter((d) => !estEnRetard(d.date_limite)).length;
     return { moyenne, nonLues, aRendre, nbNotes: notes.length, nbCours: data?.emploi_du_temps?.length || 0 };
   }, [data, notifications, devoirs]);
+
+  const marquerCommeLue = async (notification) => {
+    setNotificationBusy(notification.id);
+    setNotificationActionError('');
+    try {
+      await client.put(`/communication/notifications/${notification.id}/lu`);
+      setNotifications((current) => toArray(current).map((item) => (
+        item.id === notification.id ? { ...item, lu: true, date_lecture: new Date().toISOString() } : item
+      )));
+    } catch (err) {
+      setNotificationActionError(apiErrorMessage(err));
+    } finally {
+      setNotificationBusy(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -194,6 +211,7 @@ export default function EspaceEtudiant() {
 
         {tab === 'notifications' && (
           <div>
+            {notificationActionError && <p className="text-sm text-red-600 mb-3" role="alert">{notificationActionError}</p>}
             {loadingNotif && <LoadingScreen />}
             {errorNotif && <ErrorState message={errorNotif} onRetry={reloadNotif} />}
             {!loadingNotif && !errorNotif && (
@@ -211,7 +229,19 @@ export default function EspaceEtudiant() {
                         {!n.lu && <Badge tone="brand">Nouveau</Badge>}
                       </div>
                       <p className="text-sm text-slate-600 mt-1.5">{n.message}</p>
-                      <p className="text-xs text-slate-400 mt-1.5">{new Date(n.created_at).toLocaleString('fr-FR')}</p>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <p className="text-xs text-slate-400">{new Date(n.created_at).toLocaleString('fr-FR')}</p>
+                        {!n.lu && (
+                          <button
+                            type="button"
+                            className="btn-secondary !px-2.5 !py-1.5 text-xs"
+                            disabled={notificationBusy === n.id}
+                            onClick={() => marquerCommeLue(n)}
+                          >
+                            {notificationBusy === n.id ? 'Enregistrement…' : 'Marquer comme lue'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

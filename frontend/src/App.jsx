@@ -15,6 +15,7 @@ const VerificationBulletin = lazy(() => import('./pages/VerificationBulletin'));
 const EspaceEtudiant = lazy(() => import('./pages/EspaceEtudiant'));
 const EspaceEnseignant = lazy(() => import('./pages/EspaceEnseignant'));
 const EspaceAgent = lazy(() => import('./pages/EspaceAgent'));
+const Actualites = lazy(() => import('./pages/Actualites'));
 
 const STAFF_ROLES = ['admin', 'enseignant', 'secretaire', 'economie', 'surveillant', 'accueil'];
 
@@ -24,6 +25,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/actualites" element={<Actualites />} />
         <Route path="/mot-de-passe-oublie" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/verification-bulletin/:token" element={<VerificationBulletin />} />

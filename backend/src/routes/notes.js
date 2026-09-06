@@ -1,12 +1,12 @@
 const express = require('express');
-const { query } = require('../config/db');
+const { query, pool } = require('../config/db');
 const { asyncHandler, ApiError } = require('../middleware/errorHandler');
 const { authenticate, authorize, ROLES_TOUS_STAFF } = require('../middleware/auth');
 const { noteValeurValide } = require('../services/calculsMetier');
 const { runImport, texte, optionnel, nombre } = require('../utils/importHelper');
 const { validate } = require('../middleware/validate');
 const { idParamSchema } = require('../validation/common');
-const { creerNoteSchema, modifierNoteSchema } = require('../validation/notes.schemas');
+const { creerNoteSchema, modifierNoteSchema, notesEnMasseSchema } = require('../validation/notes.schemas');
 
 const router = express.Router();
 
@@ -82,6 +82,60 @@ router.post('/', authenticate, authorize('enseignant', 'admin', 'secretaire'), v
     [eleve_id, classeId, matiere_id, enseignantId, anneeActiveId, bimestre_id, note_valeur, type_evaluation || 'autre', coefficient_evaluation || 1, commentaire || null]
   );
   res.status(201).json(rows[0]);
+}));
+
+// Saisie par classe : une seule transaction garantit qu'une erreur annule toute la série.
+router.post('/bulk', authenticate, authorize('enseignant', 'admin', 'secretaire'), validate({ body: notesEnMasseSchema }), asyncHandler(async (req, res) => {
+  const { matiere_id, bimestre_id, notes, type_evaluation, coefficient_evaluation, enseignant_id: enseignantDemande } = req.body;
+  if (req.user.role === 'secretaire' && !enseignantDemande) {
+    throw new ApiError(400, 'enseignant_id est requis : le secrétaire saisit une note au nom d\'un enseignant.');
+  }
+  const enseignantId = ['admin', 'secretaire'].includes(req.user.role) && enseignantDemande ? enseignantDemande : req.user.id;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: annee } = await client.query('SELECT id FROM annee_scolaire WHERE actif = TRUE');
+    if (!annee[0]) throw new ApiError(409, 'Aucune année scolaire active (RG-001).');
+    const anneeActiveId = annee[0].id;
+    const { rows: bimestre } = await client.query(
+      'SELECT id FROM bimestre WHERE id = $1 AND annee_scolaire_id = $2',
+      [bimestre_id, anneeActiveId]
+    );
+    if (!bimestre[0]) throw new ApiError(400, 'Le bimestre ne correspond pas à l\'année scolaire active.');
+
+    const inserted = [];
+    for (const note of notes) {
+      if (!noteValeurValide(note.note_valeur)) throw new ApiError(400, 'Chaque note doit être comprise entre 0 et 20.');
+      const { rows: insc } = await client.query(
+        `SELECT classe_id FROM inscription
+         WHERE eleve_id = $1 AND annee_scolaire_id = $2 AND statut = 'inscrit'`,
+        [note.eleve_id, anneeActiveId]
+      );
+      if (!insc[0]) throw new ApiError(404, `Aucune inscription active pour l'élève ${note.eleve_id}.`);
+      if (req.user.role === 'enseignant') {
+        const { rows: assignment } = await client.query(
+          `SELECT 1 FROM enseignant_matiere_classe
+           WHERE enseignant_id = $1 AND matiere_id = $2 AND classe_id = $3 AND annee_scolaire_id = $4`,
+          [enseignantId, matiere_id, insc[0].classe_id, anneeActiveId]
+        );
+        if (!assignment.length) throw new ApiError(403, 'Vous n\'enseignez pas cette matière dans la classe d\'un élève.');
+      }
+      const { rows } = await client.query(
+        `INSERT INTO note (eleve_id, classe_id, matiere_id, enseignant_id, annee_scolaire_id, bimestre_id, note_valeur, type_evaluation, coefficient_evaluation, commentaire)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [note.eleve_id, insc[0].classe_id, matiere_id, enseignantId, anneeActiveId, bimestre_id,
+          note.note_valeur, type_evaluation || 'autre', coefficient_evaluation || 1, note.commentaire || null]
+      );
+      inserted.push(rows[0]);
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ count: inserted.length, notes: inserted });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }));
 
 // POST /notes/import -> import en masse (bulletin de notes reçu du papier, copie d'une classe

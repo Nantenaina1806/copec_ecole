@@ -11,7 +11,7 @@ export default function Actualites() {
   const navigate = useNavigate();
   const ecole = useEcole();
   const { data: rawActus, loading, error, reload } = useFetch(
-    () => client.get('/communication/actualites').then((r) => r.data),
+    () => client.get('/communication/actualites/public').then((r) => r.data),
     []
   );
   const actus = toArray(rawActus);

@@ -41,7 +41,7 @@ test('distanceMetres : renvoie null si une coordonnée manque', () => {
 // ---------------------------------------------------------------------------
 test('decomposerTimestamp : extrait correctement jour/date/minutes', () => {
   // 2026-08-24 = un lundi
-  const r = decomposerTimestamp('2026-08-24T07:45:00.000Z');
+  const r = decomposerTimestamp('2026-08-24T07:45:00.000+03:00');
   assert.equal(r.dateStr, '2026-08-24');
   assert.equal(r.jour, 'Lundi');
   assert.equal(r.minutesDuJour, 7 * 60 + 45);
@@ -112,27 +112,27 @@ test('validerGps : position hors rayon -> refusé', () => {
 // calculerRetard / calculerDepartAnticipe
 // ---------------------------------------------------------------------------
 test('calculerRetard : aucun retard si arrivée avant l\'heure prévue', () => {
-  const dateObj = new Date('2026-08-24T07:25:00');
+  const dateObj = new Date('2026-08-24T07:25:00+03:00');
   assert.equal(calculerRetard('07:30:00', dateObj), 0);
 });
 
 test('calculerRetard : la tolérance de 5 min absorbe les petits écarts', () => {
-  const dateObj = new Date('2026-08-24T07:33:00'); // 3 min après l'heure prévue
+  const dateObj = new Date('2026-08-24T07:33:00+03:00'); // 3 min après l'heure prévue
   assert.equal(calculerRetard('07:30:00', dateObj), 0);
 });
 
 test('calculerRetard : retard réel = écart moins la tolérance', () => {
-  const dateObj = new Date('2026-08-24T07:50:00'); // 20 min après
+  const dateObj = new Date('2026-08-24T07:50:00+03:00'); // 20 min après
   assert.equal(calculerRetard('07:30:00', dateObj), 15); // 20 - 5
 });
 
 test('calculerDepartAnticipe : aucun départ anticipé si sortie après l\'heure prévue', () => {
-  const dateObj = new Date('2026-08-24T16:05:00');
+  const dateObj = new Date('2026-08-24T16:05:00+03:00');
   assert.equal(calculerDepartAnticipe('16:00:00', dateObj), 0);
 });
 
 test('calculerDepartAnticipe : départ anticipé réel = écart moins la tolérance', () => {
-  const dateObj = new Date('2026-08-24T15:40:00'); // 20 min avant
+  const dateObj = new Date('2026-08-24T15:40:00+03:00'); // 20 min avant
   assert.equal(calculerDepartAnticipe('16:00:00', dateObj), 15); // 20 - 5
 });
 

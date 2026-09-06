@@ -29,6 +29,7 @@ const S3_ENABLED = Boolean(process.env.S3_BUCKET);
 let s3Client = null;
 let PutObjectCommand = null;
 let DeleteObjectCommand = null;
+let GetObjectCommand = null;
 
 if (S3_ENABLED) {
   // Dépendance chargée uniquement si le mode S3 est activé — inutile d'imposer
@@ -37,6 +38,7 @@ if (S3_ENABLED) {
   const { S3Client } = sdk;
   PutObjectCommand = sdk.PutObjectCommand;
   DeleteObjectCommand = sdk.DeleteObjectCommand;
+  GetObjectCommand = sdk.GetObjectCommand;
   s3Client = new S3Client({
     region: process.env.S3_REGION || 'auto',
     endpoint: process.env.S3_ENDPOINT || undefined,
@@ -91,6 +93,8 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // Séparé de /documents pour ne jamais être mélangé avec les pièces jointes élèves.
 const SELFIE_DIR = path.join(UPLOAD_ROOT, 'selfies');
 fs.mkdirSync(SELFIE_DIR, { recursive: true });
+const PUBLIC_DIR = path.join(UPLOAD_ROOT, 'public');
+fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 
 const TAILLE_MAX_SELFIE_OCTETS = 3 * 1024 * 1024; // 3 Mo (photo caméra frontale compressée côté client)
 
@@ -144,6 +148,8 @@ const TAILLE_MAX_OCTETS = 10 * 1024 * 1024; // 10 Mo
 // Moteur de stockage multer personnalisé : envoie directement le flux uploadé
 // vers le bucket S3-compatible, sans jamais écrire sur le disque local.
 class StorageS3 {
+  constructor(prefix) { this.prefix = prefix; }
+
   _handleFile(req, file, cb) {
     const chunks = [];
     file.stream.on('data', (chunk) => chunks.push(chunk));
@@ -151,7 +157,7 @@ class StorageS3 {
     file.stream.on('end', async () => {
       try {
         const buffer = Buffer.concat(chunks);
-        const key = await envoyerBufferS3('documents', buffer, file.mimetype, file.originalname);
+        const key = await envoyerBufferS3(this.prefix, buffer, file.mimetype, file.originalname);
         cb(null, { filename: key, key, size: buffer.length });
       } catch (err) {
         cb(err);
@@ -166,7 +172,7 @@ class StorageS3 {
 }
 
 const storage = S3_ENABLED
-  ? new StorageS3()
+  ? new StorageS3('documents')
   : multer.diskStorage({
       destination: (req, file, cb) => cb(null, UPLOAD_DIR),
       filename: (req, file, cb) => {
@@ -186,11 +192,37 @@ function fileFilter(req, file, cb) {
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: TAILLE_MAX_OCTETS } });
 
+function imageFileFilter(req, file, cb) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+    return cb(new ApiError(400, 'Image non autorisée. Formats acceptés : .jpg, .jpeg, .png, .webp.'));
+  }
+  return cb(null, true);
+}
+
+const publicStorage = S3_ENABLED
+  ? new StorageS3('actualites')
+  : multer.diskStorage({
+      destination: (req, file, cb) => cb(null, PUBLIC_DIR),
+      filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname).toLowerCase()}`),
+    });
+const uploadPublicImage = multer({ storage: publicStorage, fileFilter: imageFileFilter, limits: { fileSize: TAILLE_MAX_OCTETS } });
+
 // Construit l'URL publique absolue d'un fichier uploadé (documents/logo/images)
 // à partir de son nom (mode local) ou de sa clé (mode S3).
 function urlFichier(req, filenameOuCle) {
   if (S3_ENABLED) return urlPubliqueS3(filenameOuCle);
   return `${req.protocol}://${req.get('host')}/uploads/documents/${filenameOuCle}`;
+}
+
+function urlImagePublique(req, filenameOuCle) {
+  if (S3_ENABLED) return urlPubliqueS3(filenameOuCle);
+  return `${req.protocol}://${req.get('host')}/uploads/public/${filenameOuCle}`;
+}
+
+async function recupererObjetS3(key) {
+  if (!S3_ENABLED) return null;
+  return s3Client.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }));
 }
 
 // Supprime un fichier uploadé, local ou S3 selon le mode actif (best-effort,
@@ -213,5 +245,5 @@ function supprimerFichierLocal(fichierUrl) {
 module.exports = {
   upload, urlFichier, supprimerFichierLocal, UPLOAD_DIR, TAILLE_MAX_OCTETS,
   enregistrerSelfieBase64, urlSelfie, supprimerSelfieLocal, SELFIE_DIR,
-  S3_ENABLED,
+  uploadPublicImage, urlImagePublique, recupererObjetS3, PUBLIC_DIR, S3_ENABLED,
 };

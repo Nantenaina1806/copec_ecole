@@ -1,8 +1,10 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { query } = require('../config/db');
 const { asyncHandler, ApiError } = require('../middleware/errorHandler');
 const { authenticate, authorize, ROLES_TOUS_STAFF } = require('../middleware/auth');
-const { upload, urlFichier } = require('../middleware/upload');
+const { uploadPublicImage, urlImagePublique, recupererObjetS3, PUBLIC_DIR, UPLOAD_DIR, S3_ENABLED } = require('../middleware/upload');
 const { validate } = require('../middleware/validate');
 const { idParamSchema } = require('../validation/common');
 const {
@@ -10,6 +12,40 @@ const {
 } = require('../validation/communication.schemas');
 
 const router = express.Router();
+
+// Endpoint public : aucune donnée interne ni brouillon ne doit être exposé.
+router.get('/actualites/public', asyncHandler(async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, titre, contenu, image_url, date_publication, created_at
+     FROM actualite
+     WHERE publie = TRUE
+     ORDER BY COALESCE(date_publication, created_at) DESC`
+  );
+  res.json(rows.map((actualite) => actualite.image_url
+    ? { ...actualite, image_url: `${req.protocol}://${req.get('host')}/api/communication/actualites/${actualite.id}/image` }
+    : actualite));
+}));
+
+router.get('/actualites/:id/image', validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
+  const { rows } = await query('SELECT image_url FROM actualite WHERE id = $1 AND publie = TRUE', [req.params.id]);
+  if (!rows[0]?.image_url) throw new ApiError(404, 'Image introuvable.');
+  const imageUrl = rows[0].image_url;
+  if (S3_ENABLED) {
+    const base = (process.env.S3_PUBLIC_URL || '').replace(/\/$/, '');
+    if (!imageUrl.startsWith(`${base}/actualites/`) && !imageUrl.startsWith(`${base}/documents/`)) throw new ApiError(404, 'Image introuvable.');
+    const object = await recupererObjetS3(imageUrl.slice(base.length + 1));
+    res.set('Content-Type', object.ContentType || 'image/jpeg');
+    return object.Body.pipe(res);
+  }
+  const publicMarker = '/uploads/public/';
+  const documentsMarker = '/uploads/documents/';
+  const marker = imageUrl.includes(publicMarker) ? publicMarker : documentsMarker;
+  if (!imageUrl.includes(marker)) throw new ApiError(404, 'Image introuvable.');
+  const root = marker === publicMarker ? PUBLIC_DIR : UPLOAD_DIR;
+  const filePath = path.join(root, path.basename(imageUrl.split(marker)[1]));
+  if (!fs.existsSync(filePath)) throw new ApiError(404, 'Image introuvable.');
+  return res.sendFile(filePath);
+}));
 
 // --- Actualités --- réservées à l'administrateur
 router.get('/actualites', authenticate, authorize('admin'), asyncHandler(async (req, res) => {
@@ -75,17 +111,20 @@ router.delete('/actualites/:id', authenticate, authorize('admin'), validate({ pa
 
 // Upload de l'image d'illustration d'une actualité (fichier séparé, comme le logo de l'école).
 router.post('/actualites/upload-image', authenticate, authorize('admin'), (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
+  uploadPublicImage.single('image')(req, res, (err) => {
     if (err) return next(err);
     return next();
   });
 }, asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(400, 'Aucun fichier reçu.');
-  res.json({ image_url: urlFichier(req, req.file.filename) });
+  res.json({ image_url: urlImagePublique(req, req.file.filename) });
 }));
 
 // --- Notifications (élève) ---
 router.get('/notifications', authenticate, asyncHandler(async (req, res) => {
+  if (req.user.type !== 'eleve' && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Les notifications sont réservées à l’élève concerné.');
+  }
   const eleveId = req.user.type === 'eleve' ? req.user.id : req.query.eleve_id;
   if (!eleveId) throw new ApiError(400, 'eleve_id requis.');
   const { rows } = await query('SELECT * FROM notification WHERE eleve_id = $1 ORDER BY created_at DESC', [eleveId]);
@@ -104,9 +143,14 @@ router.post('/notifications', authenticate, authorize(...ROLES_TOUS_STAFF), vali
 }));
 
 router.put('/notifications/:id/lu', authenticate, validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
+  if (req.user.type !== 'eleve' && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Action non autorisée.');
+  }
+  const ownership = req.user.type === 'eleve' ? ' AND eleve_id = $2' : '';
+  const params = req.user.type === 'eleve' ? [req.params.id, req.user.id] : [req.params.id];
   const { rows } = await query(
-    `UPDATE notification SET lu = TRUE, date_lecture = NOW() WHERE id = $1 RETURNING *`,
-    [req.params.id]
+    `UPDATE notification SET lu = TRUE, date_lecture = NOW() WHERE id = $1${ownership} RETURNING *`,
+    params
   );
   if (!rows[0]) throw new ApiError(404, 'Notification introuvable.');
   res.json(rows[0]);

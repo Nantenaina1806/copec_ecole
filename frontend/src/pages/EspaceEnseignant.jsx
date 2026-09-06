@@ -553,13 +553,13 @@ function PoserNote({ enseignantId, adminView, mesClasses, affectations }) {
     try {
       const entries = Object.entries(notes).filter(([, v]) => v !== '' && v !== undefined);
       if (!entries.length) { toast.error('Saisis au moins une note.'); return; }
-      for (const [eleveId, valeur] of entries) {
-        await client.post('/notes', {
-          eleve_id: eleveId, matiere_id: matiereId, bimestre_id: bimestreIdEffectif,
-          note_valeur: Number(valeur), type_evaluation: typeEvaluation || 'autre',
-          enseignant_id: adminView ? enseignantId : undefined,
-        });
-      }
+      await client.post('/notes/bulk', {
+        matiere_id: matiereId,
+        bimestre_id: bimestreIdEffectif,
+        type_evaluation: typeEvaluation || 'autre',
+        enseignant_id: adminView ? enseignantId : undefined,
+        notes: entries.map(([eleveId, valeur]) => ({ eleve_id: eleveId, note_valeur: Number(valeur) })),
+      });
       toast.success(`${entries.length} note(s) enregistrée(s).`);
       setNotes({});
     } catch (err) {

@@ -14,9 +14,20 @@ const router = express.Router();
 router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF, 'eleve'), asyncHandler(async (req, res) => {
   const { classe_id, enseignant_id } = req.query;
   const conditions = []; const params = [];
-  if (classe_id) { params.push(classe_id); conditions.push(`d.classe_id = $${params.length}`); }
-  if (enseignant_id) { params.push(enseignant_id); conditions.push(`d.enseignant_id = $${params.length}`); }
-  if (req.user.role === 'eleve') conditions.push('d.envoye = TRUE');
+  if (req.user.role === 'eleve') {
+    conditions.push('d.envoye = TRUE');
+    params.push(req.user.id);
+    conditions.push(`EXISTS (
+      SELECT 1 FROM inscription i
+      WHERE i.eleve_id = $${params.length}
+        AND i.classe_id = d.classe_id
+        AND i.annee_scolaire_id = d.annee_scolaire_id
+        AND i.statut IN ('inscrit', 'en_cours')
+    )`);
+  } else {
+    if (classe_id) { params.push(classe_id); conditions.push(`d.classe_id = $${params.length}`); }
+    if (enseignant_id) { params.push(enseignant_id); conditions.push(`d.enseignant_id = $${params.length}`); }
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT d.*, c.nom AS classe_nom, m.nom AS matiere_nom
@@ -56,6 +67,9 @@ router.post('/', authenticate, authorize('enseignant', 'admin'), validate({ body
 router.put('/:id', authenticate, authorize('enseignant', 'admin'), validate({ params: idParamSchema, body: devoirSchema }), asyncHandler(async (req, res) => {
   const { rows: existant } = await query('SELECT * FROM devoir WHERE id = $1', [req.params.id]);
   if (!existant[0]) throw new ApiError(404, 'Devoir introuvable.');
+  if (req.user.role === 'enseignant' && Number(existant[0].enseignant_id) !== Number(req.user.id)) {
+    throw new ApiError(403, 'Vous ne pouvez modifier que vos propres devoirs.');
+  }
   if (existant[0].envoye) throw new ApiError(409, 'Ce devoir a déjà été envoyé aux élèves, il ne peut plus être modifié.');
 
   const { classe_id, matiere_id, titre, consignes, date_assignation, date_limite, fichier_url } = req.body;
@@ -77,13 +91,17 @@ router.put('/:id', authenticate, authorize('enseignant', 'admin'), validate({ pa
 }));
 
 router.put('/:id/envoyer', authenticate, authorize('enseignant', 'admin'), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
-  const { rows } = await query(`UPDATE devoir SET envoye = TRUE WHERE id = $1 RETURNING *`, [req.params.id]);
+  const ownership = req.user.role === 'enseignant' ? ' AND enseignant_id = $2' : '';
+  const params = req.user.role === 'enseignant' ? [req.params.id, req.user.id] : [req.params.id];
+  const { rows } = await query(`UPDATE devoir SET envoye = TRUE WHERE id = $1${ownership} RETURNING *`, params);
   if (!rows[0]) throw new ApiError(404, 'Devoir introuvable.');
   res.json(rows[0]);
 }));
 
 router.delete('/:id', authenticate, authorize('enseignant', 'admin'), validate({ params: idParamSchema }), asyncHandler(async (req, res) => {
-  const { rowCount } = await query('DELETE FROM devoir WHERE id = $1', [req.params.id]);
+  const ownership = req.user.role === 'enseignant' ? ' AND enseignant_id = $2' : '';
+  const params = req.user.role === 'enseignant' ? [req.params.id, req.user.id] : [req.params.id];
+  const { rowCount } = await query(`DELETE FROM devoir WHERE id = $1${ownership}`, params);
   if (!rowCount) throw new ApiError(404, 'Devoir introuvable.');
   res.status(204).send();
 }));

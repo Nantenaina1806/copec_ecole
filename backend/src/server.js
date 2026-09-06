@@ -62,7 +62,7 @@ app.use(sanitizeInput);
 // Fichiers uploadés (documents élèves) — servis tels quels, en dehors du préfixe /api.
 const UPLOAD_ROOT = path.resolve(process.env.COPEC_UPLOAD_DIR || path.join(__dirname, '..', 'uploads'));
 require('fs').mkdirSync(UPLOAD_ROOT, { recursive: true });
-app.use('/uploads', express.static(UPLOAD_ROOT));
+app.use('/uploads/public', express.static(path.join(UPLOAD_ROOT, 'public')));
 
 // Limite générale, appliquée à toute l'API : filet de sécurité contre le
 // scraping/bruteforce agressif ou un client mal codé qui boucle. Les endpoints
@@ -141,22 +141,26 @@ app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 4000;
-const server = app.listen(PORT, async () => {
-  console.log(`Serveur Gestion École COPEC démarré sur le port ${PORT} (${process.env.NODE_ENV || 'development'})`);
-  console.log('Schéma DB : database/schema.sql (source de vérité unique)');
-  try {
-    await runMigrations();
-    demarrerCronJobs();
-    demarrerSynchronisation();
-  } catch (err) {
-    console.error('[migration] Échec des migrations additives :', err);
-    process.exit(1);
-  }
-});
+let server = null;
+if (require.main === module) {
+  server = app.listen(PORT, async () => {
+    console.log(`Serveur Gestion École COPEC démarré sur le port ${PORT} (${process.env.NODE_ENV || 'development'})`);
+    console.log('Schéma DB : database/schema.sql (source de vérité unique)');
+    try {
+      await runMigrations();
+      demarrerCronJobs();
+      demarrerSynchronisation();
+    } catch (err) {
+      console.error('[migration] Échec des migrations additives :', err);
+      process.exit(1);
+    }
+  });
+}
 
 module.exports = app;
 module.exports.server = server;
 const shutdownHandler = async (signal) => {
+  if (!server) return;
   console.log(`[SERVER] Signal ${signal} reçu : fermeture propre du serveur API COPEC...`);
   try {
     await arreterSynchronisation();

@@ -114,6 +114,7 @@ function NotificationBell({ user }) {
 
 export default function Topbar({ active, onToggleMobile }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [now, setNow] = useState(getServerNow());
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -150,7 +151,7 @@ export default function Topbar({ active, onToggleMobile }) {
 
   useEffect(() => {
     const q = search.trim();
-    if (q.length < 2) { setGlobalResults([]); return undefined; }
+    if (q.length < 2) return undefined;
     let cancelled = false;
     const timer = setTimeout(async () => {
       setSearching(true);
@@ -182,7 +183,14 @@ export default function Topbar({ active, onToggleMobile }) {
   const initials = `${user?.prenom?.[0] || ''}${user?.nom?.[0] || ''}`.toUpperCase() || 'U';
   const visibleSections = SECTIONS.filter((s) => s.roles.includes(user?.role));
   const matches = search.trim() ? visibleSections.filter((s) => s.label.toLowerCase().includes(search.toLowerCase())).slice(0, 6) : [];
+  const displayedGlobalResults = search.trim().length >= 2 ? globalResults : [];
+  const hasSearchResults = matches.length > 0 || displayedGlobalResults.length > 0;
   const roleLabel = { admin: 'Administrateur', enseignant: 'Enseignant', secretaire: 'Secrétaire', economie: 'Économe', surveillant: 'Surveillant', accueil: 'Accueil' }[user?.role] || user?.role;
+  const ouvrirResultat = (event, href) => {
+    event.preventDefault();
+    setSearch('');
+    navigate(href);
+  };
 
   return (
     <header className="sticky top-0 z-20 h-16 md:h-[76px] border-b border-slate-200/80 bg-white/90 shadow-[0_1px_0_rgba(18,45,82,.02),0_6px_20px_rgba(18,45,82,.035)] backdrop-blur supports-[backdrop-filter]:bg-white/85">
@@ -210,16 +218,17 @@ export default function Topbar({ active, onToggleMobile }) {
             aria-label="Recherche globale"
           />
           <kbd className="hidden sm:inline-flex absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Ctrl K</kbd>
-          {(matches.length > 0 || globalResults.length > 0 || searching) && (
+          {(matches.length > 0 || displayedGlobalResults.length > 0 || searching) && (
             <div className="absolute left-0 right-0 top-12 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-card-lg z-50 max-h-[420px] overflow-y-auto">
-              {matches.map((item) => <a key={`section-${item.key}`} href={item.hrefByRole?.[user?.role] || `/admin/${item.key}`} onClick={() => setSearch('')} className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-slate-700 hover:bg-brand-50 hover:text-brand-800"><span>{item.labelByRole?.[user?.role] || item.label}</span><span className="text-[10px] text-slate-400">Section</span></a>)}
-              {globalResults.map((item) => (
-                <a key={`${item.type}-${item.id}`} href={item.href || '/admin'} onClick={() => setSearch('')} className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-slate-700 hover:bg-brand-50 hover:text-brand-800">
+              {matches.map((item) => <a key={`section-${item.key}`} href={item.hrefByRole?.[user?.role] || `/admin/${item.key}`} onClick={(event) => ouvrirResultat(event, item.hrefByRole?.[user?.role] || `/admin/${item.key}`)} className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-slate-700 hover:bg-brand-50 hover:text-brand-800"><span>{item.labelByRole?.[user?.role] || item.label}</span><span className="text-[10px] text-slate-400">Section</span></a>)}
+              {displayedGlobalResults.map((item) => (
+                <a key={`${item.type}-${item.id}`} href={item.href || '/admin'} onClick={(event) => ouvrirResultat(event, item.href || '/admin')} className="flex items-center justify-between rounded-xl px-3 py-2.5 text-sm text-slate-700 hover:bg-brand-50 hover:text-brand-800">
                   <span className="min-w-0"><b className="font-semibold truncate block">{item.label || `${item.prenom || ''} ${item.nom || item.recu_numero || item.email || ''}`}</b><span className="block text-[10px] text-slate-400 uppercase">{item.type}{item.matiere_nom ? ` · ${item.matiere_nom}` : ''}{item.role ? ` · ${item.role}` : ''}</span></span>
                   <ArrowUpRight size={13} className="shrink-0 text-slate-300" />
                 </a>
               ))}
               {searching && <div className="px-3 py-2 text-xs text-slate-400">Recherche…</div>}
+              {!searching && search.trim().length >= 2 && !hasSearchResults && <div className="px-3 py-3 text-sm text-slate-500">Aucun résultat pour « {search.trim()} ».</div>}
             </div>
           )}
         </div>

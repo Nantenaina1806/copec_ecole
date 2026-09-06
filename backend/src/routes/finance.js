@@ -103,7 +103,7 @@ router.get('/dashboard', authenticate, authorize(...ROLES_FINANCE), asyncHandler
 // --- Grille tarifaire (tarif_frais) ---
 // Référence des montants par niveau/type de frais, utilisée par POST /tarifs/generer pour
 // créer automatiquement les frais_scolaire de tous les élèves concernés (voir schema.sql).
-router.get('/tarifs', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
+router.get('/tarifs', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
   const { annee_scolaire_id } = req.query;
   const params = []; let where = '';
   if (annee_scolaire_id) { params.push(annee_scolaire_id); where = 'WHERE t.annee_scolaire_id = $1'; }
@@ -244,7 +244,7 @@ router.post('/tarifs/generer', authenticate, authorize(...ROLES_FINANCE), valida
 }));
 
 // --- Frais scolaires ---
-router.get('/frais', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
+router.get('/frais', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
   const { eleve_id, statut, classe_id } = req.query;
   const conditions = []; const params = [];
   let join = '';
@@ -274,7 +274,7 @@ router.post('/frais', authenticate, authorize(...ROLES_FINANCE), validate({ body
 }));
 
 // --- Paiements --- RG-101/102 : lié à un frais, statut recalculé (impaye/partiel/paye)
-router.get('/paiements', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async (req, res) => {
+router.get('/paiements', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
   const { eleve_id, frais_id } = req.query;
   const conditions = []; const params = [];
   if (eleve_id) { params.push(eleve_id); conditions.push(`p.eleve_id = $${params.length}`); }
