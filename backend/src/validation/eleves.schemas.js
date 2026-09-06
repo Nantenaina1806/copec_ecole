@@ -3,7 +3,7 @@ const { z, texte, dateISO, enumParmi, booleen } = require('./common');
 const sexe = enumParmi(['M', 'F'], 'sexe');
 
 const creerEleveSchema = z.object({
-  matricule: texte({ max: 50 }),
+  matricule: texte({ max: 50, requis: false }),
   nom: texte({ max: 100 }),
   prenom: texte({ max: 100, requis: false }),
   date_naissance: dateISO.optional().or(z.literal('')),

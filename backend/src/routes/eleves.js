@@ -7,6 +7,7 @@ const { runImport, texte, optionnel } = require('../utils/importHelper');
 const { validate } = require('../middleware/validate');
 const { idParamSchema } = require('../validation/common');
 const { creerEleveSchema, modifierEleveSchema } = require('../validation/eleves.schemas');
+const { uploadPublicImage, urlImagePublique } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -67,6 +68,18 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
     params
   );
   res.json(rows);
+}));
+
+router.get('/prochain-matricule', authenticate, authorize('admin', 'secretaire'), asyncHandler(async (req, res) => {
+  const { rows: anneeRows } = await query('SELECT libelle FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+  const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
+  const prefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
+  const { rows } = await query(
+    `SELECT COALESCE(MAX(SUBSTRING(matricule FROM $1)::INT), 0) + 1 AS prochain
+     FROM eleve WHERE matricule LIKE $2 AND SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'`,
+    [prefix.length + 1, `${prefix}%`]
+  );
+  res.json({ matricule: `${prefix}${String(rows[0].prochain).padStart(4, '0')}` });
 }));
 
 // GET /eleves/:id/fiche -> dossier complet (Notes, Absences, EDT, Bulletin, Carte élève)
@@ -143,10 +156,20 @@ router.get('/:id/fiche', authenticate, authorize(...ROLES_TOUS_STAFF, 'eleve'), 
 
 router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body: creerEleveSchema }), asyncHandler(async (req, res) => {
   const {
-    matricule, nom, prenom, date_naissance, lieu_naissance, sexe, adresse, telephone, email,
+    nom, prenom, date_naissance, lieu_naissance, sexe, adresse, telephone, email,
   } = req.body;
 
   const qr_code_data = crypto.randomBytes(12).toString('hex');
+  const { rows: anneeRows } = await query('SELECT libelle FROM annee_scolaire WHERE actif = TRUE LIMIT 1');
+  const anneeMatch = anneeRows[0]?.libelle?.match(/(\d{2})(?:\D*)$/);
+  const matriculePrefix = `5000C${anneeMatch ? anneeMatch[1] : String(new Date().getFullYear() + 1).slice(-2)}`;
+  const { rows: compteurRows } = await query(
+    `SELECT COALESCE(MAX(SUBSTRING(matricule FROM $1)::INT), 0) AS dernier
+     FROM eleve
+     WHERE matricule LIKE $2 AND SUBSTRING(matricule FROM $1) ~ '^[0-9]+$'`,
+    [matriculePrefix.length + 1, `${matriculePrefix}%`]
+  );
+  const matricule = `${matriculePrefix}${String(Number(compteurRows[0].dernier) + 1).padStart(4, '0')}`;
   const { rows } = await query(
     `INSERT INTO eleve (matricule, nom, prenom, date_naissance, lieu_naissance, sexe, adresse, telephone, email, qr_code_data, numero_carte)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
@@ -154,6 +177,14 @@ router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body
       telephone || null, email || null, qr_code_data, matricule]
   );
   res.status(201).json(rows[0]);
+}));
+
+router.post('/:id/photo', authenticate, authorize('admin', 'secretaire'), validate({ params: idParamSchema }), uploadPublicImage.single('photo'), asyncHandler(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'Sélectionnez une image.');
+  const photo_url = urlImagePublique(req, req.file.key || req.file.filename);
+  const { rows } = await query('UPDATE eleve SET photo_url = $1 WHERE id = $2 RETURNING *', [photo_url, req.params.id]);
+  if (!rows[0]) throw new ApiError(404, 'Élève introuvable.');
+  res.json(rows[0]);
 }));
 
 // POST /eleves/import -> import en masse (Excel/CSV) : mêmes règles que POST /eleves,

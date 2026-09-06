@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Pencil, UserCheck } from 'lucide-react';
 import client, { apiErrorMessage } from '../../api/client';
@@ -128,8 +128,8 @@ export default function Eleves() {
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    matricule: '', nom: '', prenom: '', date_naissance: '', sexe: 'M', telephone: '', email: '',
-    classe_id: '', numero_classe: '',
+    matricule: '', nom: '', prenom: '', date_naissance: '', lieu_naissance: '', sexe: 'M', telephone: '',
+    classe_id: '', numero_classe: '', photo: null,
   });
   const [parentMode, setParentMode] = useState('nouveau'); // 'nouveau' | 'existant' | 'aucun'
   const [parentIdExistant, setParentIdExistant] = useState('');
@@ -147,6 +147,25 @@ export default function Eleves() {
     setForm((f) => ({ ...f, [k]: e.target.value }));
     setFieldErrors((er) => (er[k] ? { ...er, [k]: undefined } : er));
   };
+  const onClasseChange = async (e) => {
+    const classe_id = e.target.value;
+    setForm((f) => ({ ...f, classe_id, numero_classe: '' }));
+    if (!classe_id || !anneeActive) return;
+    try {
+      const { data } = await client.get('/inscriptions/prochain-numero', {
+        params: { classe_id, annee_scolaire_id: anneeActive.id },
+      });
+      setForm((f) => (f.classe_id === classe_id ? { ...f, numero_classe: String(data.numero_classe) } : f));
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  };
+  useEffect(() => {
+    if (!modalOpen || !anneeActive || form.matricule) return;
+    client.get('/eleves/prochain-matricule').then(({ data }) => {
+      setForm((f) => (f.matricule ? f : { ...f, matricule: data.matricule }));
+    }).catch(() => {});
+  }, [modalOpen, anneeActive, form.matricule]);
   const setParent = (k) => (e) => {
     setParentForm((f) => ({ ...f, [k]: e.target.value }));
     setParentFieldErrors((er) => (er[k] ? { ...er, [k]: undefined } : er));
@@ -154,7 +173,7 @@ export default function Eleves() {
 
   const resetForm = () => {
     setStep(1);
-    setForm({ matricule: '', nom: '', prenom: '', date_naissance: '', sexe: 'M', telephone: '', email: '', classe_id: '', numero_classe: '' });
+    setForm({ matricule: '', nom: '', prenom: '', date_naissance: '', lieu_naissance: '', sexe: 'M', telephone: '', classe_id: '', numero_classe: '', photo: null });
     setFieldErrors({});
     setParentFieldErrors({});
     setParentMode('nouveau');
@@ -165,7 +184,6 @@ export default function Eleves() {
   const goToParentStep = (e) => {
     e.preventDefault();
     const errs = {};
-    if (!form.matricule.trim()) errs.matricule = 'Le matricule est requis.';
     if (!form.nom.trim()) errs.nom = 'Le nom est requis.';
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
     setStep(2);
@@ -184,7 +202,13 @@ export default function Eleves() {
       if (Object.keys(errs).length) { setParentFieldErrors(errs); return; }
     }
     try {
-      const { data: eleve } = await client.post('/eleves', form);
+      const { photo, ...eleveForm } = form;
+      const { data: eleve } = await client.post('/eleves', eleveForm);
+      if (photo) {
+        const photoData = new FormData();
+        photoData.append('photo', photo);
+        await client.post(`/eleves/${eleve.id}/photo`, photoData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      }
       if (form.classe_id && anneeActive) {
         await client.post('/inscriptions', {
           eleve_id: eleve.id, classe_id: form.classe_id, annee_scolaire_id: anneeActive.id,
@@ -265,6 +289,20 @@ export default function Eleves() {
   };
 
   const [inscrireFieldErrors, setInscrireFieldErrors] = useState({});
+  const onInscrireClasseChange = async (e) => {
+    const classe_id = e.target.value;
+    setInscrireForm((f) => ({ ...f, classe_id, numero_classe: '' }));
+    setInscrireFieldErrors((er) => ({ ...er, classe_id: undefined }));
+    if (!classe_id || !anneeActive) return;
+    try {
+      const { data } = await client.get('/inscriptions/prochain-numero', {
+        params: { classe_id, annee_scolaire_id: anneeActive.id },
+      });
+      setInscrireForm((f) => (f.classe_id === classe_id ? { ...f, numero_classe: String(data.numero_classe) } : f));
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  };
   const submitInscrire = async (e) => {
     e.preventDefault();
     if (!inscrireForm.classe_id) { setInscrireFieldErrors({ classe_id: 'Choisissez une classe.' }); return; }
@@ -391,7 +429,7 @@ export default function Eleves() {
       >
         {step === 1 ? (
           <form onSubmit={goToParentStep} className="grid sm:grid-cols-2 gap-4" noValidate>
-            <TextInput label="Matricule" required value={form.matricule} onChange={set('matricule')} error={fieldErrors.matricule} autoFocus />
+            <TextInput label="Matricule" value={form.matricule} placeholder="Généré automatiquement" readOnly autoFocus />
             <SelectInput label="Sexe" value={form.sexe} onChange={set('sexe')}>
               <option value="M">Masculin</option>
               <option value="F">Féminin</option>
@@ -399,11 +437,15 @@ export default function Eleves() {
             <TextInput label="Nom" required value={form.nom} onChange={set('nom')} error={fieldErrors.nom} />
             <TextInput label="Prénom" value={form.prenom} onChange={set('prenom')} />
             <TextInput label="Date de naissance" type="date" max={getServerToday()} value={form.date_naissance} onChange={set('date_naissance')} />
+            <TextInput label="Lieu de naissance" value={form.lieu_naissance} onChange={set('lieu_naissance')} />
             <TextInput label="Téléphone" value={form.telephone} onChange={set('telephone')} />
-            <TextInput label="Email" type="email" className="sm:col-span-2" value={form.email} onChange={set('email')} />
+            <label className="block text-sm font-medium text-slate-700">
+              Photo de l&apos;élève
+              <input className="mt-1.5 block w-full text-sm text-slate-600" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setForm((f) => ({ ...f, photo: e.target.files?.[0] || null }))} />
+            </label>
             <SelectInput
               label={`Classe ${anneeActive ? `(${anneeActive.libelle})` : ''}`} value={form.classe_id}
-              onChange={set('classe_id')} disabled={!anneeActive}
+              onChange={onClasseChange} disabled={!anneeActive}
               hint={!anneeActive ? "Aucune année active — l'élève sera créé sans inscription." : undefined}
             >
               <option value="">— Aucune —</option>
@@ -411,7 +453,7 @@ export default function Eleves() {
             </SelectInput>
             <TextInput
               label="N° dans la classe" type="number" min="1" value={form.numero_classe}
-              onChange={set('numero_classe')} disabled={!anneeActive || !form.classe_id}
+              placeholder="Généré automatiquement" readOnly disabled={!anneeActive || !form.classe_id}
             />
             <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
               <button type="button" className="btn-ghost" onClick={() => { setModalOpen(false); resetForm(); }}>Annuler</button>
@@ -554,15 +596,14 @@ export default function Eleves() {
               label={`Classe ${anneeActive ? `(${anneeActive.libelle})` : ''}`} required
               error={inscrireFieldErrors.classe_id}
               value={inscrireForm.classe_id}
-              onChange={(e) => { setInscrireForm((f) => ({ ...f, classe_id: e.target.value })); setInscrireFieldErrors((er) => ({ ...er, classe_id: undefined })); }}
+              onChange={onInscrireClasseChange}
             >
               <option value="">— Choisir —</option>
               {classes?.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
             </SelectInput>
             <TextInput
-              label="N° dans la classe" hint="Optionnel." type="number" min="1"
+              label="N° dans la classe" hint="Généré automatiquement." type="number" min="1" readOnly
               value={inscrireForm.numero_classe}
-              onChange={(e) => setInscrireForm((f) => ({ ...f, numero_classe: e.target.value }))}
             />
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" className="btn-ghost" onClick={() => setInscrireModalOpen(false)}>Annuler</button>

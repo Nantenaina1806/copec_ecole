@@ -28,14 +28,33 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
   res.json(rows);
 }));
 
+router.get('/prochain-numero', authenticate, authorize('admin', 'secretaire'), asyncHandler(async (req, res) => {
+  const { classe_id, annee_scolaire_id } = req.query;
+  if (!classe_id || !annee_scolaire_id) throw new ApiError(400, 'La classe et l’année scolaire sont requises.');
+  const { rows } = await query(
+    `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
+     FROM inscription WHERE classe_id = $1 AND annee_scolaire_id = $2`,
+    [classe_id, annee_scolaire_id]
+  );
+  res.json({ numero_classe: rows[0].prochain });
+}));
+
 // POST /inscriptions -> RG-001/RG-002 : inscrit un élève dans une classe pour une année (doit être active sauf droit spécial)
 router.post('/', authenticate, authorize('admin', 'secretaire'), validate({ body: creerInscriptionSchema }), asyncHandler(async (req, res) => {
-  const { eleve_id, classe_id, annee_scolaire_id, numero_classe, observation } = req.body;
+  const { eleve_id, classe_id, annee_scolaire_id, observation } = req.body;
   const { rows: annee } = await query('SELECT actif FROM annee_scolaire WHERE id = $1', [annee_scolaire_id]);
   if (!annee[0]) throw new ApiError(404, 'Année scolaire introuvable.');
   if (!annee[0].actif && req.user.role !== 'admin') {
     throw new ApiError(403, "Inscription sur une année non active refusée (RG-001) : droit administrateur requis.");
   }
+
+  const { rows: numeroRows } = await query(
+    `SELECT COALESCE(MAX(numero_classe), 0) + 1 AS prochain
+     FROM inscription
+     WHERE classe_id = $1 AND annee_scolaire_id = $2`,
+    [classe_id, annee_scolaire_id]
+  );
+  const numero_classe = numeroRows[0].prochain;
 
   const { rows } = await query(
     `INSERT INTO inscription (eleve_id, classe_id, annee_scolaire_id, numero_classe, observation)
