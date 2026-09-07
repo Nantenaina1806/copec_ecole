@@ -66,7 +66,7 @@ router.get('/', authenticate, authorize(...ROLES_TOUS_STAFF), asyncHandler(async
       COUNT(*) FILTER (WHERE n.note_valeur < 10)::int AS faibles
       FROM note n WHERE n.annee_scolaire_id=$1 ${teacherFilterNote}`, baseParams),
     query(`SELECT COALESCE(SUM(f.montant_total),0) AS attendu,
-      COALESCE((SELECT SUM(p.montant) FROM paiement p JOIN frais_scolaire f2 ON f2.id=p.frais_id WHERE f2.annee_scolaire_id=$1),0) AS paye,
+      COALESCE((SELECT SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END) FROM paiement p JOIN frais_scolaire f2 ON f2.id=p.frais_id WHERE f2.annee_scolaire_id=$1),0) AS paye,
       COUNT(*) FILTER (WHERE f.statut IN ('impaye','partiel'))::int AS dossiers_impayes
       FROM frais_scolaire f WHERE f.annee_scolaire_id=$1`, [anneeId]),
     query(`SELECT COALESCE(SUM(montant),0) AS total, COUNT(*)::int AS count

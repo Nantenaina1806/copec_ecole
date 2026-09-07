@@ -760,6 +760,10 @@ CREATE TABLE paiement (
     frais_id INT NOT NULL,
     eleve_id INT NOT NULL,
     montant DECIMAL(12,2) NOT NULL CHECK (montant > 0),
+    -- si TRUE : paiement de type avoir (annulation) lié à un paiement original;
+    -- ces lignes sont comptées comme négatives pour le calcul des totaux.
+    is_avoir BOOLEAN NOT NULL DEFAULT FALSE,
+    original_paiement_id INT,
     mode_paiement VARCHAR(30) NOT NULL CHECK (mode_paiement IN ('especes', 'virement', 'cheque', 'mobile_money', 'carte', 'autre')),
     reference_paiement VARCHAR(100),
     date_paiement DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -773,6 +777,8 @@ CREATE TABLE paiement (
     CONSTRAINT fk_paiement_utilisateur FOREIGN KEY (utilisateur_id) REFERENCES utilisateur(id) ON DELETE SET NULL,
     CONSTRAINT fk_paiement_agent FOREIGN KEY (agent_id) REFERENCES agent(id) ON DELETE SET NULL
 );
+
+ALTER TABLE paiement ADD CONSTRAINT fk_paiement_original FOREIGN KEY (original_paiement_id) REFERENCES paiement(id) ON DELETE SET NULL;
 
 -- TABLE relance_impaye
 -- Historique des relances (email/SMS) envoyées aux parents pour un frais_scolaire en retard
@@ -1359,15 +1365,17 @@ BEGIN
     FROM frais_scolaire
     WHERE id = NEW.frais_id;
 
-    SELECT COALESCE(SUM(p.montant), 0) INTO total_paye
-    FROM paiement p
-    WHERE p.frais_id = NEW.frais_id
-      AND p.id <> COALESCE(NEW.id, 0);
+        -- Somme nette des paiements en tenant compte des avoirs (is_avoir = TRUE -> négatif)
+        SELECT COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END), 0) INTO total_paye
+        FROM paiement p
+        WHERE p.frais_id = NEW.frais_id
+            AND p.id <> COALESCE(NEW.id, 0);
 
-    IF total_paye + NEW.montant > montant_frais THEN
-        RAISE EXCEPTION 'Paiement supérieur au montant du frais: frais %, montant %, déjà payé %',
-            NEW.frais_id, montant_frais, total_paye;
-    END IF;
+        -- Valeur effective du nouveau montant (les avoirs diminuent le total)
+        IF total_paye + (CASE WHEN COALESCE(NEW.is_avoir, FALSE) THEN -NEW.montant ELSE NEW.montant END) > montant_frais THEN
+                RAISE EXCEPTION 'Paiement supérieur au montant du frais: frais %, montant %, déjà payé %',
+                        NEW.frais_id, montant_frais, total_paye;
+        END IF;
     RETURN NEW;
 END;
 $$;
