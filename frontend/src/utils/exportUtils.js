@@ -274,6 +274,8 @@ export function printRecuPaiement({ paiement, frais, ecole }) {
   const nomEcole = ecole?.nom_ecole || 'COPEC ISAHA';
   const coordonnees = [ecole?.adresse, ecole?.telephone, ecole?.email].filter(Boolean).join(' · ');
   const montant = Number(paiement.montant);
+  const isAvoir = !!paiement.is_avoir;
+  const montantAffiche = isAvoir ? `-${montant.toLocaleString('fr-FR')} Ar` : `${montant.toLocaleString('fr-FR')} Ar`;
   const accent = '#1b3c62';
 
   win.document.write(`
@@ -286,8 +288,11 @@ export function printRecuPaiement({ paiement, frais, ecole }) {
       <body>
       <div class="feuille">
         ${enteteCopec({ nomEcole, coordonnees, accent })}
-        <div class="bandeau"><h2>🎓 Reçu de paiement — Écolage</h2></div>
-        <p class="numero">N° ${escapeHtml(paiement.recu_numero || '—')} · ${escapeHtml(new Date(paiement.date_paiement || Date.now()).toLocaleDateString('fr-FR'))}</p>
+        <div class="bandeau"><h2>🎓 ${isAvoir ? 'Avoir / Annulation' : 'Reçu de paiement — Écolage'}</h2></div>
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <p class="numero">N° ${escapeHtml(paiement.recu_numero || '—')} · ${escapeHtml(new Date(paiement.date_paiement || Date.now()).toLocaleDateString('fr-FR'))}</p>
+          ${paiement.recu_numero ? `<img alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(window.location.origin + '/api/finance/recu/verify/' + paiement.recu_numero)}" style="width:80px;height:80px;border-radius:6px;"/>` : ''}
+        </div>
 
         <table class="infos">
           <tr><td class="label">👤 Élève</td><td class="valeur">${escapeHtml(`${paiement.eleve_prenom || ''} ${paiement.eleve_nom || ''}`.trim())}</td></tr>
@@ -305,14 +310,14 @@ export function printRecuPaiement({ paiement, frais, ecole }) {
         </div>
 
         <div class="montant-bloc">
-          <div class="valeur">${montant.toLocaleString('fr-FR')} Ar</div>
-          <div class="label">Montant encaissé</div>
+          <div class="valeur">${isAvoir ? `-${montant.toLocaleString('fr-FR')}` : montant.toLocaleString('fr-FR')} Ar</div>
+          <div class="label">${isAvoir ? 'Montant annulé (avoir)' : 'Montant encaissé'}</div>
         </div>
 
         <div class="recu-bloc">
           Je soussigné(e), caissier(ère) de ${escapeHtml(nomEcole)}, reconnais avoir reçu de
           <strong>${escapeHtml(`${paiement.eleve_prenom || ''} ${paiement.eleve_nom || ''}`.trim())}</strong> (ou son représentant)
-          la somme de <strong>${montant.toLocaleString('fr-FR')} Ar</strong>,
+          la somme de <strong>${isAvoir ? `-${montant.toLocaleString('fr-FR')} Ar` : `${montant.toLocaleString('fr-FR')} Ar`}</strong>,
           en toutes lettres : <em>${escapeHtml(montantEnLettres(montant))} ariary</em>,
           pour solde relatif au motif ci-dessus.
         </div>
@@ -366,7 +371,10 @@ export function printRecuPaiementLot({ eleve, lignes, montant_total, mode_paieme
       <div class="feuille">
         ${enteteCopec({ nomEcole, coordonnees, accent })}
         <div class="bandeau"><h2>🎓 Reçu de paiement groupé — Écolage</h2></div>
-        <p class="numero">N° ${escapeHtml(premierRecu)}${dernierRecu !== premierRecu ? ` à ${escapeHtml(dernierRecu)}` : ''} · ${escapeHtml(new Date().toLocaleDateString('fr-FR'))}</p>
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <p class="numero">N° ${escapeHtml(premierRecu)}${dernierRecu !== premierRecu ? ` à ${escapeHtml(dernierRecu)}` : ''} · ${escapeHtml(new Date().toLocaleDateString('fr-FR'))}</p>
+          ${premierRecu ? `<img alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(window.location.origin + '/api/finance/recu/verify/' + premierRecu)}" style="width:80px;height:80px;border-radius:6px;"/>` : ''}
+        </div>
 
         <table class="infos">
           <tr><td class="label">👤 Élève</td><td class="valeur">${escapeHtml(`${eleve?.eleve_prenom || ''} ${eleve?.eleve_nom || ''}`.trim())}</td></tr>

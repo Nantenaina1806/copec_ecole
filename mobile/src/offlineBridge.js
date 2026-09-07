@@ -88,6 +88,42 @@ async function activeYear(db) {
 async function readOffline(db, config) {
   const path = pathOf(config);
   const params = config.params || {};
+
+  if (path === '/parametres/public') {
+    return { nom_ecole: 'COPEC ISAHA', slogan: null, logo_url: null, couleur_principale: '#1b3c62', couleur_accent: '#d99a3f' };
+  }
+  if (path === '/auth/me') {
+    try {
+      const stored = localStorage.getItem('copec_user');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { id: 0, nom: 'Utilisateur', role: 'enseignant' };
+  }
+  if (path === '/annees-scolaires/active') {
+    const result = await db.query('SELECT * FROM annee_scolaire WHERE actif = 1 LIMIT 1', []);
+    return result.values?.[0] || { id: 1, libelle: 'Année scolaire active' };
+  }
+  if (path === '/system/time') {
+    return { server_time: new Date().toISOString() };
+  }
+  if (path === '/paie/mon-salaire') {
+    return { total: 0, bulletins: [] };
+  }
+  if (path === '/pointage/cours-actuel') {
+    return { id: null, matiere_nom: null };
+  }
+  if (path === '/auth/selfie-statut') {
+    return { selfie_valide: true };
+  }
+  if (path === '/assistant/statut') {
+    return { disponible: false };
+  }
+  if (path === '/sync/status') {
+    return { status: 'ok' };
+  }
+  if (path.endsWith('/fiche')) {
+    return {};
+  }
   if (path === '/classes') {
     const result = await db.query('SELECT * FROM classe ORDER BY nom', []);
     return result.values || [];

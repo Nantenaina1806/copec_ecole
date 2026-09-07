@@ -37,6 +37,18 @@ const creerFraisSchema = z.object({
   date_echeance: dateISO.optional().or(z.literal('')),
 });
 
+const modifierFraisSchema = z.object({
+  type_frais: texte({ max: 50, requis: false }).optional(),
+  libelle: texte({ max: 200, requis: false }).optional(),
+  montant_total: montant.optional(),
+  mois: z.coerce.number().int().min(1).max(12).optional().nullable(),
+  date_echeance: dateISO.optional().or(z.literal('')).optional(),
+});
+
+const annulerFraisSchema = z.object({
+  motif: texte({ max: 500 }),
+});
+
 const creerPaiementSchema = z.object({
   frais_id: entierPositif(),
   montant,
@@ -81,6 +93,8 @@ module.exports = {
   upsertTarifSchema,
   genererFraisSchema,
   creerFraisSchema,
+  modifierFraisSchema,
+  annulerFraisSchema,
   creerPaiementSchema,
   paiementLotSchema,
   creerDepenseSchema,

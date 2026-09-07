@@ -410,10 +410,27 @@ app.on('second-instance', () => { if (mainWindow) mainWindow.focus(); else if (s
 
 app.whenReady().then(async () => {
   app.setAppUserModelId('mg.copec.gestionecole');
-  const config = readConfig();
+  let config = readConfig();
   if (!config?.localDbPassword || !config?.jwtSecret || !config?.bulletinQrSecret || !config?.deviceId) {
-    createSetupWindow();
-    return;
+    config = {
+      centralDatabaseUrl: DEFAULT_CENTRAL_DATABASE_URL,
+      localDbPassword: config?.localDbPassword || generateSecret(),
+      deviceId: config?.deviceId || `WIN-${crypto.randomUUID()}`,
+      jwtSecret: config?.jwtSecret || generateSecret(),
+      bulletinQrSecret: config?.bulletinQrSecret || generateSecret(),
+      publicAppUrl: '',
+      groqApiKey: '',
+      groqModel: 'openai/gpt-oss-120b',
+      emailProvider: 'resend',
+      resendApiKey: '',
+      emailFrom: '',
+      whatsappAccessToken: '',
+      whatsappPhoneNumberId: '',
+      whatsappApiVersion: 'v23.0',
+      whatsappTemplateName: '',
+      whatsappTemplateLanguage: 'fr',
+    };
+    writeConfig(config);
   }
   try { await launchConfiguredApp(config); }
   catch (error) { console.error('[COPEC] démarrage:', error); await stopLocalPostgres().catch(() => {}); localPostgres = null; createSetupWindow(`Démarrage COPEC impossible : ${error.message}`); }

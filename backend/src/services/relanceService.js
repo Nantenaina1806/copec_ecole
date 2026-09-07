@@ -39,7 +39,7 @@ async function genererRelancesRetard(options = {}) {
 
   const { rows: candidats } = await query(
     `SELECT f.id AS frais_id, f.eleve_id,
-            f.montant_total - COALESCE((SELECT SUM(p.montant) FROM paiement p WHERE p.frais_id = f.id), 0) AS montant_du,
+            f.montant_total - COALESCE((SELECT SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END) FROM paiement p WHERE p.frais_id = f.id), 0) AS montant_du,
             (CURRENT_DATE - f.date_echeance) AS jours_retard,
             (SELECT MAX(r.created_at) FROM relance_impaye r WHERE r.frais_id = f.id) AS derniere_relance
      FROM frais_scolaire f

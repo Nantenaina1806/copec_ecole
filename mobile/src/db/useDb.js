@@ -22,15 +22,20 @@ let databaseInitPromise = null;
 async function initialiseDatabase() {
   if (!databaseInitPromise) {
     databaseInitPromise = (async () => {
-      if (!sqliteConnectionSingleton) {
-        sqliteConnectionSingleton = new SQLiteConnection(CapacitorSQLite);
+      try {
+        if (!sqliteConnectionSingleton) {
+          sqliteConnectionSingleton = new SQLiteConnection(CapacitorSQLite);
+        }
+        const conn = await sqliteConnectionSingleton.createConnection(DB_NAME, false, 'no-encryption', 1, false);
+        await conn.open();
+        for (const statement of schemaSql.split(';').map((s) => s.trim()).filter(Boolean)) {
+          await conn.execute(`${statement};`);
+        }
+        return conn;
+      } catch (err) {
+        databaseInitPromise = null;
+        throw err;
       }
-      const conn = await sqliteConnectionSingleton.createConnection(DB_NAME, false, 'no-encryption', 1, false);
-      await conn.open();
-      for (const statement of schemaSql.split(';').map((s) => s.trim()).filter(Boolean)) {
-        await conn.execute(`${statement};`);
-      }
-      return conn;
     })();
   }
   return databaseInitPromise;

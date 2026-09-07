@@ -36,10 +36,15 @@ async function testConnection() {
 
 async function saveConfig() {
   if (databaseUrl.value.trim()) {
-    try { await window.copec.testConnection(databaseUrl.value.trim()); }
-    catch (error) { setStatus(error.message || 'Connexion centrale impossible.', 'error'); return; }
+    try {
+      await window.copec.testConnection(databaseUrl.value.trim());
+    } catch (error) {
+      console.warn('Test de connexion centrale échoué, poursuite en mode local:', error.message);
+      setStatus('Connexion distante indisponible actuellement. COPEC démarrera en mode local (synchronisation automatique dès le retour du réseau).', 'error');
+      await new Promise((r) => setTimeout(r, 1500));
+    }
   }
-  setStatus('Configuration et préparation de la base… Cela peut prendre quelques secondes.');
+  setStatus('Configuration et préparation de la base locale… Cela peut prendre quelques secondes.');
   test.disabled = true;
   save.disabled = true;
   try {

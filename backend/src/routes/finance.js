@@ -10,6 +10,7 @@ const { idParamSchema } = require('../validation/common');
 const {
   upsertTarifSchema, genererFraisSchema, creerFraisSchema, creerPaiementSchema,
   paiementLotSchema, creerDepenseSchema, clotureCaisseSchema, relancesGenererSchema,
+  modifierFraisSchema, annulerFraisSchema,
 } = require('../validation/finance.schemas');
 
 const router = express.Router();
@@ -55,7 +56,7 @@ router.get('/controle', authenticate, authorize(...ROLES_FINANCE), asyncHandler(
       SELECT
         (SELECT COUNT(*) FROM frais_scolaire WHERE statut IN ('impaye','partiel')${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS frais_ouverts,
         (SELECT COUNT(*) FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement = CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}) AS paiements_aujourd_hui,
-        (SELECT COALESCE(SUM(p.montant),0) FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement = CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}) AS encaisse_aujourd_hui,
+        (SELECT COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END),0) FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement = CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}) AS encaisse_aujourd_hui,
         (SELECT COALESCE(SUM(montant),0) FROM depense WHERE date_depense = CURRENT_DATE${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS depenses_aujourd_hui,
         (SELECT COUNT(*) FROM cloture_caisse WHERE date_cloture = CURRENT_DATE${anneeId ? ' AND annee_scolaire_id = $1' : ''}) AS caisses_cloturees_aujourdhui
     `, controleParams)
@@ -79,7 +80,7 @@ router.get('/situations-eleves', authenticate, authorize(...ROLES_FINANCE), asyn
     JOIN inscription i ON i.eleve_id=e.id AND i.statut='inscrit'
     JOIN classe c ON c.id=i.classe_id
     LEFT JOIN frais_scolaire f ON f.eleve_id=e.id AND f.annee_scolaire_id=i.annee_scolaire_id
-    LEFT JOIN LATERAL (SELECT SUM(p2.montant) AS total_paye FROM paiement p2 WHERE p2.frais_id=f.id) p ON TRUE
+    LEFT JOIN LATERAL (SELECT COALESCE(SUM(p2.montant * CASE WHEN p2.is_avoir THEN -1 ELSE 1 END),0) AS total_paye FROM paiement p2 WHERE p2.frais_id=f.id) p ON TRUE
     WHERE 1=1 ${where}
     GROUP BY e.id,e.matricule,e.nom,e.prenom,c.nom
     ORDER BY solde DESC, e.nom, e.prenom
@@ -101,12 +102,12 @@ router.get('/dashboard', authenticate, authorize(...ROLES_FINANCE), asyncHandler
   const periodeParams = anneeId ? [debut, fin, anneeId] : [debut, fin];
   const [frais, paiements, depenses, caisses, impayes] = await Promise.all([
     query(`SELECT COALESCE(SUM(montant_total),0) total_facture, COUNT(*) nb_frais FROM frais_scolaire f WHERE f.created_at::date BETWEEN $1 AND $2 AND f.statut <> 'annule'${anneeFilter}`, periodeParams),
-    query(`SELECT COALESCE(SUM(p.montant),0) total_encaisse, COUNT(*) nb_paiements FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement BETWEEN $1 AND $2${paiementFilter}`, periodeParams),
+    query(`SELECT COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END),0) total_encaisse, COUNT(*) nb_paiements FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id WHERE p.date_paiement BETWEEN $1 AND $2${paiementFilter}`, periodeParams),
     query(`SELECT COALESCE(SUM(montant),0) total_depenses, COUNT(*) nb_depenses FROM depense WHERE date_depense BETWEEN $1 AND $2${depenseFilter}`, periodeParams),
     query(`SELECT * FROM v_solde_caisse ORDER BY nom`),
-        query(`SELECT COALESCE(SUM(f.montant_total - COALESCE(p.total,0)),0) total_restant, COUNT(*) nb_impayes
-           FROM frais_scolaire f LEFT JOIN (SELECT frais_id,SUM(montant) total FROM paiement GROUP BY frais_id) p ON p.frais_id=f.id
-          WHERE f.statut IN ('impaye','partiel') AND f.date_echeance IS NOT NULL AND f.date_echeance < CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}`, anneeId ? [anneeId] : []),
+          query(`SELECT COALESCE(SUM(f.montant_total - COALESCE(p.total,0)),0) total_restant, COUNT(*) nb_impayes
+            FROM frais_scolaire f LEFT JOIN (SELECT frais_id, SUM(montant * CASE WHEN is_avoir THEN -1 ELSE 1 END) total FROM paiement GROUP BY frais_id) p ON p.frais_id=f.id
+           WHERE f.statut IN ('impaye','partiel') AND f.date_echeance IS NOT NULL AND f.date_echeance < CURRENT_DATE${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}`, anneeId ? [anneeId] : []),
   ]);
   const r=frais.rows[0], p=paiements.rows[0], d=depenses.rows[0], imp=impayes.rows[0];
   const totalEncaisse=Number(p.total_encaisse), totalDepenses=Number(d.total_depenses);
@@ -251,7 +252,7 @@ router.get('/frais', authenticate, authorize(...ROLES_FINANCE), asyncHandler(asy
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const { rows } = await query(
     `SELECT DISTINCT f.*, e.nom AS eleve_nom, e.prenom AS eleve_prenom, e.matricule,
-       COALESCE((SELECT SUM(p.montant) FROM paiement p WHERE p.frais_id = f.id), 0) AS total_paye
+      COALESCE((SELECT SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END) FROM paiement p WHERE p.frais_id = f.id), 0) AS total_paye
      FROM frais_scolaire f JOIN eleve e ON e.id = f.eleve_id ${join}
      ${where} ORDER BY f.date_echeance NULLS LAST`,
     params
@@ -268,6 +269,39 @@ router.post('/frais', authenticate, authorize(...ROLES_FINANCE), validate({ body
   );
   await tracerFinance(query, req, 'creation', 'frais_scolaire', rows[0].id, null, rows[0]);
   res.status(201).json(rows[0]);
+}));
+
+// PUT /finance/frais/:id — modification contrôlée d'un frais (évite de changer eleve/annee)
+router.put('/frais/:id', authenticate, authorize(...ROLES_FINANCE), validate({ params: idParamSchema, body: modifierFraisSchema }), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const { rows: avantRows } = await query('SELECT * FROM frais_scolaire WHERE id = $1', [id]);
+  if (!avantRows[0]) throw new ApiError(404, 'Frais introuvable.');
+  const avant = avantRows[0];
+  const { type_frais, libelle, montant_total, mois, date_echeance } = req.body;
+  const { rows } = await query(
+    `UPDATE frais_scolaire SET type_frais = COALESCE($1, type_frais), libelle = COALESCE($2, libelle), montant_total = COALESCE($3, montant_total), mois = COALESCE($4, mois), date_echeance = COALESCE($5, date_echeance) WHERE id = $6 RETURNING *`,
+    [type_frais || null, libelle || null, montant_total || null, (typeof mois === 'undefined' ? null : mois), date_echeance || null, id]
+  );
+  await tracerFinance(query, req, 'modification', 'frais_scolaire', id, avant, rows[0]);
+  res.json(rows[0]);
+}));
+
+// POST /finance/frais/:id/annuler — annulation contrôlée d'un frais (ne supprime rien)
+router.post('/frais/:id/annuler', authenticate, authorize(...ROLES_FINANCE), validate({ params: idParamSchema, body: annulerFraisSchema }), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  const { motif } = req.body;
+  const { rows: fraisRows } = await query('SELECT * FROM frais_scolaire WHERE id = $1', [id]);
+  if (!fraisRows[0]) throw new ApiError(404, 'Frais introuvable.');
+  // Vérifie qu'il n'y a pas de paiements nets > 0 attachés
+  const { rows: totalRows } = await query(`SELECT COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END),0) AS total FROM paiement p WHERE p.frais_id = $1`, [id]);
+  const totalPaye = Number(totalRows[0].total);
+  if (totalPaye > 0) throw new ApiError(409, 'Impossible d\'annuler un frais ayant des paiements enregistrés. Annulez d\'ab les paiements (avoir) ou contactez l\'administrateur.');
+
+  const { rows: avant } = await query('SELECT * FROM frais_scolaire WHERE id = $1', [id]);
+  const { rows } = await query("UPDATE frais_scolaire SET statut = 'annule' WHERE id = $1 RETURNING *", [id]);
+  await tracerFinance(query, req, 'modification', 'frais_scolaire', id, avant[0] || null, rows[0]);
+  // Enregistre le motif dans commentaire ou journal d'audit : tracerFinance prend en charge
+  res.json(rows[0]);
 }));
 
 // --- Paiements --- RG-101/102 : lié à un frais, statut recalculé (impaye/partiel/paye)
@@ -337,6 +371,64 @@ router.post('/paiements', authenticate, authorize(...ROLES_FINANCE), authorizePe
 
     await client.query('COMMIT');
     res.status(201).json({ ...paiementRows[0], statut_frais: statut, reste: Number(fraisRows[0].montant_total) - totalPaye });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
+// POST /finance/paiements/:id/annuler — annulation contrôlée d'un paiement (création d'un "avoir").
+router.post('/paiements/:id/annuler', authenticate, authorize(...ROLES_FINANCE), authorizePermission('finance.write'), asyncHandler(async (req, res) => {
+  const paiementId = Number(req.params.id);
+  const { motif } = req.body || {};
+  if (!motif || String(motif).trim().length < 3) throw new ApiError(400, 'Motif d\'annulation requis (au moins 3 caractères).');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: origRows } = await client.query('SELECT * FROM paiement WHERE id = $1', [paiementId]);
+    if (!origRows[0]) throw new ApiError(404, 'Paiement introuvable.');
+    const orig = origRows[0];
+
+    // Génère un numéro séquentiel AVO-... pour l'avoir
+    const avoNumero = await numeroSequentiel(client.query.bind(client), 'AVO');
+
+    const { rows: newRows } = await client.query(
+      `INSERT INTO paiement (frais_id, eleve_id, montant, mode_paiement, reference_paiement, recu_numero, utilisateur_id, agent_id, is_avoir, original_paiement_id, commentaire)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,$10) RETURNING *`,
+      [orig.frais_id, orig.eleve_id, orig.montant, orig.mode_paiement, orig.reference_paiement || null, avoNumero,
+        req.user.type === 'utilisateur' ? req.user.id : null,
+        req.user.type === 'agent' ? req.user.id : null,
+        orig.id, `Annulation: ${motif}`]
+    );
+
+    // Reproduit un mouvement de caisse 'sortie' si le paiement original avait un mouvement
+    const { rows: mouv } = await client.query('SELECT * FROM mouvement_caisse WHERE paiement_id = $1 LIMIT 1', [orig.id]);
+    if (mouv[0]) {
+      await client.query(
+        `INSERT INTO mouvement_caisse (caisse_id, type_mouvement, montant, reference, paiement_id, annee_scolaire_id, utilisateur_id)
+         VALUES ($1,'sortie',$2,$3,$4,$5,$6)`,
+        [mouv[0].caisse_id, orig.montant, avoNumero, newRows[0].id, orig.annee_scolaire_id, req.user.type === 'utilisateur' ? req.user.id : null]
+      );
+    }
+
+    // Recalcul du statut du frais en tenant compte des avoirs (somme nette)
+    const { rows: totalRows } = await client.query(
+      `SELECT COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END),0) AS total FROM paiement p WHERE p.frais_id = $1`,
+      [orig.frais_id]
+    );
+    const totalPaye = Number(totalRows[0].total);
+    const { rows: fraisRows } = await client.query('SELECT * FROM frais_scolaire WHERE id = $1', [orig.frais_id]);
+    const montantFrais = Number(fraisRows[0].montant_total);
+    const statut = totalPaye >= montantFrais ? 'paye' : (totalPaye > 0 ? 'partiel' : 'impaye');
+    await client.query('UPDATE frais_scolaire SET statut = $1 WHERE id = $2', [statut, orig.frais_id]);
+
+    await tracerFinance(client.query.bind(client), req, 'annulation', 'paiement', newRows[0].id, orig, newRows[0]);
+
+    await client.query('COMMIT');
+    res.status(201).json({ avoir: newRows[0], statut_frais: statut, total_paye: totalPaye });
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -604,7 +696,7 @@ router.get('/relances/eligibles', authenticate, authorize(...ROLES_FINANCE), asy
   const { rows } = await query(
     `SELECT f.id AS frais_id, f.eleve_id, e.nom AS eleve_nom, e.prenom AS eleve_prenom, e.matricule,
             f.libelle, f.mois, f.date_echeance,
-            f.montant_total - COALESCE((SELECT SUM(p.montant) FROM paiement p WHERE p.frais_id = f.id), 0) AS montant_du,
+            f.montant_total - COALESCE((SELECT SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END) FROM paiement p WHERE p.frais_id = f.id), 0) AS montant_du,
             (CURRENT_DATE - f.date_echeance) AS jours_retard,
             (SELECT MAX(r.created_at) FROM relance_impaye r WHERE r.frais_id = f.id) AS derniere_relance
      FROM frais_scolaire f JOIN eleve e ON e.id = f.eleve_id
@@ -633,3 +725,59 @@ router.post('/relances/generer', authenticate, authorize(...ROLES_FINANCE), auth
 }));
 
 module.exports = router;
+
+// Public verification endpoint for receipts (no auth) — used by QR on printed receipts.
+router.get('/recu/verify/:recu', asyncHandler(async (req, res) => {
+  const recu = req.params.recu;
+  if (!recu) return res.json({ valid: false });
+  const { rows } = await query(
+    `SELECT p.id, p.recu_numero, p.date_paiement, p.montant, p.is_avoir, p.reference_paiement,
+            e.id AS eleve_id, e.nom AS eleve_nom, e.prenom AS eleve_prenom,
+            f.id AS frais_id, f.libelle AS frais_libelle, f.montant_total AS frais_montant
+     FROM paiement p
+     LEFT JOIN eleve e ON e.id = p.eleve_id
+     LEFT JOIN frais_scolaire f ON f.id = p.frais_id
+     WHERE p.recu_numero = $1 LIMIT 1`,
+    [recu]
+  );
+  if (!rows[0]) return res.json({ valid: false });
+  const r = rows[0];
+  res.json({ valid: true, paiement: { id: r.id, recu_numero: r.recu_numero, date_paiement: r.date_paiement, montant: Number(r.montant), is_avoir: r.is_avoir, reference_paiement: r.reference_paiement }, eleve: { id: r.eleve_id, nom: r.eleve_nom, prenom: r.eleve_prenom }, frais: { id: r.frais_id, libelle: r.frais_libelle, montant_total: Number(r.frais_montant) } });
+}));
+
+// Additional dashboard endpoints
+// GET /finance/dashboard/evolution -> série temporelle mensuelle des encaissements
+router.get('/dashboard/evolution', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
+  const debut = req.query.date_debut || null;
+  const fin = req.query.date_fin || null;
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const params = [];
+  let where = '';
+  if (debut && fin) { params.push(debut); params.push(fin); where += ` WHERE p.date_paiement BETWEEN $1 AND $2`; }
+  if (anneeId) {
+    if (!where) { params.push(anneeId); where += ` WHERE f.annee_scolaire_id = $${params.length}`; }
+    else { params.push(anneeId); where += ` AND f.annee_scolaire_id = $${params.length}`; }
+  }
+  const { rows } = await query(
+    `SELECT TO_CHAR(p.date_paiement, 'YYYY-MM') AS periode, COALESCE(SUM(p.montant * CASE WHEN p.is_avoir THEN -1 ELSE 1 END),0) AS total_encaisse
+     FROM paiement p JOIN frais_scolaire f ON f.id = p.frais_id
+     ${where}
+     GROUP BY periode ORDER BY periode`,
+    params
+  );
+  res.json(rows);
+}));
+
+// GET /finance/dashboard/alertes -> petits signaux (impayés en retard, paiements partiels, écarts caisse récents)
+router.get('/dashboard/alertes', authenticate, authorize(...ROLES_FINANCE), asyncHandler(async (req, res) => {
+  const seuilJours = Number(req.query.seuil_jours || 7);
+  const anneeId = Number(req.query.annee_scolaire_id || await anneeActiveId());
+  const anneeCond = anneeId ? ` AND f.annee_scolaire_id = ${anneeId}` : '';
+  const { rows: retRows } = await query(
+    `SELECT COUNT(DISTINCT f.eleve_id) AS eleves_en_retard FROM frais_scolaire f WHERE f.statut IN ('impaye','partiel') AND f.date_echeance IS NOT NULL AND f.date_echeance <= CURRENT_DATE - $1::int ${anneeId ? ' AND f.annee_scolaire_id = $2' : ''}`,
+    anneeId ? [seuilJours, anneeId] : [seuilJours]
+  );
+  const { rows: partRows } = await query(`SELECT COUNT(*) AS paiements_partiels FROM frais_scolaire f WHERE f.statut = 'partiel'${anneeId ? ' AND f.annee_scolaire_id = $1' : ''}`, anneeId ? [anneeId] : []);
+  const { rows: ecartRows } = await query(`SELECT COUNT(*) AS caisses_ecart FROM cloture_caisse WHERE ecart IS NOT NULL AND ecart <> 0${anneeId ? ' AND annee_scolaire_id = $1' : ''}`, anneeId ? [anneeId] : []);
+  res.json({ eleves_en_retard: Number(retRows[0].eleves_en_retard || 0), paiements_partiels: Number(partRows[0].paiements_partiels || 0), caisses_ecart: Number(ecartRows[0].caisses_ecart || 0) });
+}));
