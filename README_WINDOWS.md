@@ -31,12 +31,12 @@ build-windows.bat
 Le résultat est :
 
 ```text
-dist-electron\COPEC-Setup-1.0.0.exe
+dist-electron\COPEC-Setup-<version>.exe
 ```
 
 ## Installer sur un autre ordinateur
 
-Copiez uniquement `COPEC-Setup-1.0.0.exe` sur l'autre ordinateur et installez-le.
+Copiez uniquement `COPEC-Setup-<version>.exe` sur l'autre ordinateur et installez-le.
 
 Au premier démarrage, collez la `DATABASE_URL` fournie par Neon. L'application teste la connexion et, si la base est vide, installe automatiquement le schéma et les données initiales COPEC.
 

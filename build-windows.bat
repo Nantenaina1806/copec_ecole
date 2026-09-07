@@ -29,6 +29,7 @@ echo   BUILD TERMINE !
 echo ============================================
 echo.
 echo Installeur :
+for /f "tokens=2 delims=:, " %%v in ('findstr /r /c:"\"version\"" package.json') do set "APP_VERSION=%%v"
 echo dist-electron\COPEC-Setup-1.0.0.exe
 echo.
 pause
