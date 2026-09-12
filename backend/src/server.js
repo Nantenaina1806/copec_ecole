@@ -36,6 +36,19 @@ function verifierConfiguration() {
     console.error('JWT_SECRET utilise encore la valeur par défaut de .env.example — à changer avant toute mise en production.');
     process.exit(1);
   }
+  
+  // Avertissements pour rapports email/whatsapp en production
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.trim() === '') {
+      console.warn('⚠️  RESEND_API_KEY non configurée — les rapports par Email seront désactivés.');
+    }
+    if (!process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN.trim() === '') {
+      console.warn('⚠️  WHATSAPP_ACCESS_TOKEN non configuré — les rapports par WhatsApp seront désactivés.');
+    }
+    if (!process.env.EMAIL_FROM) {
+      console.warn('⚠️  EMAIL_FROM non configuré — les rapports par Email nécessitent cette adresse.');
+    }
+  }
 }
 verifierConfiguration();
 
